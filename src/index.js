@@ -66,10 +66,53 @@ async function defaultUsername(email, secret) {
   return `${ADJECTIVES[a]}${ANIMALS[b]}${n}`;
 }
 
-async function defaultColor(email, secret) {
-  const h = await hmac(secret, email);
+// --- Color contrast (WCAG) ----------------------------------------------
+const BG_HEX = '#0f0f0f';
+const MIN_CONTRAST = 3.0;
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+}
+function relLuminance([r, g, b]) {
+  const chan = (c) => {
+    c /= 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b);
+}
+function contrastRatio(hex1, hex2) {
+  const a = relLuminance(hexToRgb(hex1));
+  const b = relLuminance(hexToRgb(hex2));
+  const [lo, hi] = a > b ? [b, a] : [a, b];
+  return (hi + 0.05) / (lo + 0.05);
+}
+function hasEnoughContrast(hex) {
+  return hexToRgb(hex) ? contrastRatio(hex, BG_HEX) >= MIN_CONTRAST : false;
+}
+
+async function defaultColor(seed, secret) {
+  const h = await hmac(secret, seed);
   const hue = parseInt(h.slice(0, 4), 16) % 360;
-  return `hsl(${hue}, 70%, 45%)`;
+  // Pure blues have low luminance contribution, so just bumping saturation
+  // isn't enough; iterate lightness until we clear MIN_CONTRAST.
+  for (const lightness of [60, 65, 70, 75, 80, 85]) {
+    const hex = rgbToHex(...hslToRgb(hue, 70, lightness));
+    if (hasEnoughContrast(hex)) return hex;
+  }
+  return '#dddddd';
 }
 
 async function addSessionIndex(env, email, sid) {
@@ -934,6 +977,12 @@ async function handleRequest(request, env) {
         const c = (body.color || '').trim();
         if (!COLOR_RE.test(c)) {
           return json({ error: 'Color must be #RRGGBB hex' }, 400);
+        }
+        // Only enforce contrast when the user actually changed the color, so
+        // pre-existing low-contrast accounts aren't blocked from unrelated
+        // profile saves.
+        if (c.toLowerCase() !== String(session.color || '').toLowerCase() && !hasEnoughContrast(c)) {
+          return json({ error: 'Color is too close to the background - pick something lighter' }, 400);
         }
         session.color = c;
       }

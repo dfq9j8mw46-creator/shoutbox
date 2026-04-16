@@ -398,6 +398,12 @@ export const HTML = `<!DOCTYPE html>
     font-weight: 600;
     font-size: 14px;
   }
+  #color-warn {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #ff6b6b;
+    min-height: 14px;
+  }
   #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   #profile-box .actions .spacer { flex: 1; }
   .btn-danger { background: #5a1f1f; color: #f5bebe; }
@@ -661,6 +667,7 @@ export const HTML = `<!DOCTYPE html>
         <input type="text" id="color-hex" maxlength="7" placeholder="#5b8def">
         <span id="color-preview">Preview</span>
       </div>
+      <div id="color-warn"></div>
     </div>
     <label class="toggle-row" for="notify-toggle">
       <input type="checkbox" id="notify-toggle">
@@ -731,6 +738,7 @@ export const HTML = `<!DOCTYPE html>
   const colorInput  = document.getElementById('color-input');
   const colorHex    = document.getElementById('color-hex');
   const colorPreview = document.getElementById('color-preview');
+  const colorWarn    = document.getElementById('color-warn');
   const profileSave = document.getElementById('profile-save');
   const profileCancel = document.getElementById('profile-cancel');
   const profileDelete = document.getElementById('profile-delete');
@@ -1486,6 +1494,7 @@ export const HTML = `<!DOCTYPE html>
     colorPreview.style.color = colorInput.value;
     colorPreview.textContent = myUsername || 'Preview';
     notifyToggle.checked = notifyOn;
+    updateColorWarn();
     renderPasskeys();
     profileModal.classList.add('open');
   });
@@ -1516,9 +1525,38 @@ export const HTML = `<!DOCTYPE html>
     showAuth();
   });
 
+  // --- Color contrast (WCAG) ---
+  const BG_HEX = '#0f0f0f';
+  const MIN_CONTRAST = 3.0;
+  function hexToRgb(hex) {
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+    if (!m) return null;
+    const v = parseInt(m[1], 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  function relLum(rgb) {
+    const chan = (c) => {
+      c /= 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * chan(rgb[0]) + 0.7152 * chan(rgb[1]) + 0.0722 * chan(rgb[2]);
+  }
+  function contrastRatio(h1, h2) {
+    const a = relLum(hexToRgb(h1)), b = relLum(hexToRgb(h2));
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function updateColorWarn() {
+    const v = colorHex.value;
+    if (!/^#[0-9a-fA-F]{6}$/.test(v)) { colorWarn.textContent = ''; return; }
+    const r = contrastRatio(v, BG_HEX);
+    colorWarn.textContent = r >= MIN_CONTRAST ? '' : 'Too close to background (' + r.toFixed(1) + ':1). Pick something lighter.';
+  }
+
   colorInput.addEventListener('input', () => {
     colorHex.value = colorInput.value;
     colorPreview.style.color = colorInput.value;
+    updateColorWarn();
   });
 
   colorHex.addEventListener('input', () => {
@@ -1527,6 +1565,7 @@ export const HTML = `<!DOCTYPE html>
       colorInput.value = v;
       colorPreview.style.color = v;
     }
+    updateColorWarn();
   });
 
   usernameInput.addEventListener('input', () => {
@@ -1542,6 +1581,13 @@ export const HTML = `<!DOCTYPE html>
     }
     if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
       alert('Color must be #RRGGBB');
+      return;
+    }
+    // Only block on a changed color; pre-existing low-contrast colors can
+    // still be saved (matches the server's behavior).
+    if (color.toLowerCase() !== String(myColor || '').toLowerCase() &&
+        contrastRatio(color, BG_HEX) < MIN_CONTRAST) {
+      alert('Color is too close to the background. Pick something lighter.');
       return;
     }
 
