@@ -1,5 +1,6 @@
 import { ChatRoom } from './chat-room.js';
 import { HTML } from './html.js';
+import VERSION from './version.json';
 
 export { ChatRoom };
 
@@ -224,6 +225,14 @@ export default {
       const newReq = new Request(request.url, { headers: newHeaders, body: request.body, method: request.method });
 
       return room.fetch(newReq);
+    }
+
+    // ---- Build provenance --------------------------------------------------
+    if (url.pathname === '/version.json') {
+      return json({
+        ...VERSION,
+        repo: 'https://github.com/dfq9j8mw46-creator/shoutbox',
+      }, 200, { 'Cache-Control': 'no-store' });
     }
 
     // ---- Serve the SPA -----------------------------------------------------
