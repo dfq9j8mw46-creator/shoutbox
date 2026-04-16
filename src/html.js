@@ -381,6 +381,34 @@ export const HTML = `<!DOCTYPE html>
   }
   #users-list li .fp { margin-left: 6px; margin-right: 0; float: right; }
 
+  /* --- Links + embeds ---------------------------------------------------- */
+  .msg .link { color: var(--accent); text-decoration: underline; }
+  .msg .link:hover { text-decoration: none; }
+  .msg .embeds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 2px;
+  }
+  .embed-img, .embed-video {
+    max-width: min(360px, 100%);
+    max-height: 260px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: block;
+    background: var(--bg);
+    cursor: zoom-in;
+  }
+  .embed-video { cursor: default; }
+  .embed-audio { width: min(360px, 100%); }
+  .embed-yt {
+    width: min(400px, 100%);
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #000;
+  }
+
   /* --- Mentions ---------------------------------------------------------- */
   .mention { color: var(--accent); font-weight: 600; }
   .msg.mentioned {
@@ -702,28 +730,111 @@ export const HTML = `<!DOCTYPE html>
     } catch {}
   }
 
-  function renderTextWithMentions(parent, text) {
-    const re = /@([a-zA-Z0-9_\\-]{1,20})/g;
+  function youtubeId(url) {
+    try {
+      const u = new URL(url);
+      if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('/')[0] || null;
+      if (/(^|\\.)youtube\\.com$/.test(u.hostname)) {
+        if (u.pathname === '/watch') return u.searchParams.get('v');
+        if (u.pathname.startsWith('/shorts/')) return u.pathname.split('/')[2] || null;
+        if (u.pathname.startsWith('/embed/'))  return u.pathname.split('/')[2] || null;
+      }
+    } catch {}
+    return null;
+  }
+
+  function classifyUrl(url) {
+    const yt = youtubeId(url);
+    if (yt && /^[a-zA-Z0-9_-]{6,20}$/.test(yt)) return { kind: 'youtube', id: yt };
+    if (/\\.(png|jpe?g|gif|webp|svg|avif)(\\?|#|$)/i.test(url)) return { kind: 'img', url };
+    if (/\\.(mp4|webm|mov|m4v)(\\?|#|$)/i.test(url)) return { kind: 'video', url };
+    if (/\\.(mp3|ogg|wav|m4a|flac)(\\?|#|$)/i.test(url)) return { kind: 'audio', url };
+    return null;
+  }
+
+  function renderMessageText(parent, text) {
+    const re = /(https?:\\/\\/[^\\s<>"'()]+[^\\s<>"'().,!?;:])|@([a-zA-Z0-9_\\-]{1,20})/g;
     let last = 0;
     let mentionedMe = false;
+    const media = [];
     let m;
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) {
         parent.appendChild(document.createTextNode(text.slice(last, m.index)));
       }
-      const span = document.createElement('span');
-      span.className = 'mention';
-      span.textContent = m[0];
-      parent.appendChild(span);
-      if (myUsername && m[1].toLowerCase() === myUsername.toLowerCase()) {
-        mentionedMe = true;
+      if (m[1]) {
+        const url = m[1];
+        const a = document.createElement('a');
+        a.href = url;
+        a.textContent = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.className = 'link';
+        parent.appendChild(a);
+        const c = classifyUrl(url);
+        if (c) media.push(c);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'mention';
+        span.textContent = m[0];
+        parent.appendChild(span);
+        if (myUsername && m[2].toLowerCase() === myUsername.toLowerCase()) {
+          mentionedMe = true;
+        }
       }
       last = m.index + m[0].length;
     }
     if (last < text.length) {
       parent.appendChild(document.createTextNode(text.slice(last)));
     }
-    return mentionedMe;
+    return { mentionedMe, media };
+  }
+
+  function renderEmbeds(parent, media) {
+    if (!media.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'embeds';
+    const maybeScroll = () => {
+      const nearBottom =
+        messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 120;
+      if (nearBottom) scrollBottom();
+    };
+    for (const item of media) {
+      if (item.kind === 'img') {
+        const img = document.createElement('img');
+        img.className = 'embed-img';
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+        img.src = item.url;
+        img.addEventListener('load', maybeScroll);
+        img.addEventListener('click', () => window.open(item.url, '_blank', 'noopener,noreferrer'));
+        wrap.appendChild(img);
+      } else if (item.kind === 'video') {
+        const v = document.createElement('video');
+        v.className = 'embed-video';
+        v.src = item.url;
+        v.controls = true;
+        v.preload = 'metadata';
+        v.addEventListener('loadedmetadata', maybeScroll);
+        wrap.appendChild(v);
+      } else if (item.kind === 'audio') {
+        const a = document.createElement('audio');
+        a.className = 'embed-audio';
+        a.src = item.url;
+        a.controls = true;
+        a.preload = 'metadata';
+        wrap.appendChild(a);
+      } else if (item.kind === 'youtube') {
+        const f = document.createElement('iframe');
+        f.className = 'embed-yt';
+        f.src = 'https://www.youtube-nocookie.com/embed/' + item.id;
+        f.allow = 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+        f.allowFullscreen = true;
+        f.loading = 'lazy';
+        wrap.appendChild(f);
+      }
+    }
+    parent.appendChild(wrap);
   }
 
   // --- Auth check ---
@@ -902,7 +1013,7 @@ export const HTML = `<!DOCTYPE html>
 
     const text = document.createElement('span');
     text.className = 'text';
-    const mentionedMe = renderTextWithMentions(text, m.text);
+    const { mentionedMe, media } = renderMessageText(text, m.text);
 
     if (mentionedMe && m.username !== myUsername) {
       div.classList.add('mentioned');
@@ -912,6 +1023,7 @@ export const HTML = `<!DOCTYPE html>
     div.appendChild(ts);
     div.appendChild(name);
     div.appendChild(text);
+    renderEmbeds(div, media);
     messagesDiv.appendChild(div);
 
     // Keep DOM limited
