@@ -1,15 +1,15 @@
 # Shoutbox
 
-A lightweight, semi-anonymous web chat that runs on Cloudflare Workers. Think old-school forum shoutbox — one shared room, messages flowing, no bloat.
+A lightweight, semi-anonymous web chat that runs on Cloudflare Workers. Think old-school forum shoutbox - one shared room, messages flowing, no bloat.
 
 ## Features
 
-- **Magic link auth** — sign in with email, no passwords
-- **Custom username & color** — pick your display name and name color
-- **100-message buffer** — only the last 100 messages are kept
-- **Real-time WebSocket** — instant message delivery via Durable Objects
-- **< 100 concurrent users** — designed to be small and fast
-- **~7 KB gzipped** — single HTML page, zero frontend dependencies
+- **Magic link auth** - sign in with email, no passwords
+- **Custom username & color** - pick your display name and name color
+- **100-message buffer** - only the last 100 messages are kept
+- **Real-time WebSocket** - instant message delivery via Durable Objects
+- **< 100 concurrent users** - designed to be small and fast
+- **~7 KB gzipped** - single HTML page, zero frontend dependencies
 
 ## Architecture
 
@@ -71,7 +71,7 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-In dev mode without `EMAIL_API_KEY`, the magic link is returned directly in the response — no email needed. Check the browser console or network tab.
+In dev mode without `EMAIL_API_KEY`, the magic link is returned directly in the response - no email needed. Check the browser console or network tab.
 
 ## Configuration
 

@@ -521,7 +521,7 @@ export const HTML = `<!DOCTYPE html>
 <!-- Auth screen -->
 <div id="auth-screen">
   <h1>Shoutbox</h1>
-  <p id="auth-intro">Sign in with a passkey — no email, no password.</p>
+  <p id="auth-intro">Sign in with a passkey - no email, no password.</p>
 
   <div id="auth-primary">
     <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
@@ -538,7 +538,7 @@ export const HTML = `<!DOCTYPE html>
     <button type="submit" class="btn btn-primary">Continue</button>
   </form>
   <p id="email-plea" style="display:none;">
-    Please use a passkey instead — I'd rather not have your email address.
+    Please use a passkey instead - I'd rather not have your email address.
     Passkeys sign you in with Face ID, Touch ID, Windows Hello, or a hardware key
     and sync across your devices automatically.
   </p>
@@ -569,7 +569,7 @@ export const HTML = `<!DOCTYPE html>
 <div id="rc-modal">
   <div id="rc-box">
     <h3>Save your recovery codes</h3>
-    <p>If you lose every device with your passkey, these one-time codes are the only way back in. Save them somewhere safe now — they won't be shown again.</p>
+    <p>If you lose every device with your passkey, these one-time codes are the only way back in. Save them somewhere safe now - they won't be shown again.</p>
     <pre id="rc-codes"></pre>
     <div class="actions">
       <button class="btn" id="rc-copy">Copy</button>
@@ -1585,7 +1585,7 @@ export const HTML = `<!DOCTYPE html>
     const short = sha.slice(0, 12);
     vmCommitLink.textContent = sha;
     vmCommitLink.href = repo && sha !== 'dev' ? repo + '/commit/' + sha : '#';
-    vmBuiltAt.textContent = versionInfo.built_at || '—';
+    vmBuiltAt.textContent = versionInfo.built_at || '-';
     vmRunLink.href = versionInfo.workflow_run || '#';
     vmRepoLink.textContent = slug;
     vmRepoLink.href = repo;
@@ -1624,7 +1624,7 @@ export const HTML = `<!DOCTYPE html>
         const d = new Date(u.created_at);
         umJoined.textContent = d.toLocaleString();
       } else {
-        umJoined.textContent = '—';
+        umJoined.textContent = '-';
       }
     } catch {
       umJoined.textContent = 'Network error';

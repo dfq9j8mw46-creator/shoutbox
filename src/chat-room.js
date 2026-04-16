@@ -114,7 +114,7 @@ export class ChatRoom {
         this.messages = this.messages.slice(-MAX_MESSAGES);
       }
 
-      // Persist (non-blocking — Durable Object guarantees ordering)
+      // Persist (non-blocking - Durable Object guarantees ordering)
       this.state.storage.put('messages', this.messages);
 
       this.broadcast({ type: 'msg', ...msg });

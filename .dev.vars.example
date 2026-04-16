@@ -1,6 +1,6 @@
 # Copy to .dev.vars for local development
 SECRET=dev-secret-change-me-in-production
 
-# Email provider (Resend recommended — https://resend.com)
+# Email provider (Resend recommended - https://resend.com)
 EMAIL_API_KEY=re_xxxxxxxxxxxx
 EMAIL_FROM=chat@yourdomain.com

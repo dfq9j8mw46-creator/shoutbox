@@ -14,6 +14,12 @@ new_sqlite_classes = ["ChatRoom"]
 [vars]
 BASE_URL = "https://sb.rooty.org"
 
+# Privacy: disable Workers Logs / observability so per-request trace data
+# (including client IPs in the request envelope) is not retained.
+[observability]
+enabled = false
+head_sampling_rate = 0
+
 [[routes]]
 pattern = "sb.rooty.org"
 custom_domain = true

@@ -765,11 +765,11 @@ export default {
       }
       const key = `magic:code:${email}`;
       const raw = await env.KV.get(key);
-      if (!raw) return json({ error: 'Code expired — request a new one' }, 400);
+      if (!raw) return json({ error: 'Code expired - request a new one' }, 400);
       const record = JSON.parse(raw);
       if (record.attempts >= 5) {
         await env.KV.delete(key);
-        return json({ error: 'Too many attempts — request a new code' }, 429);
+        return json({ error: 'Too many attempts - request a new code' }, 429);
       }
       if (record.code !== code) {
         record.attempts += 1;
