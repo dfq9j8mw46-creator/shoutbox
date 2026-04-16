@@ -64,57 +64,46 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
   }
   #users-panel {
-    width: 180px;
     border-left: 1px solid var(--border);
     background: var(--surface);
     display: flex;
     flex-direction: column;
-    transition: width .15s ease;
     flex-shrink: 0;
     overflow: hidden;
+    min-width: 140px;
+    max-width: 220px;
+    width: max-content;
   }
-  #users-panel.collapsed { width: 32px; }
-  #users-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 10px;
-    font-size: 11px;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  #users-panel.collapsed #users-header { padding: 8px 6px; justify-content: center; }
-  #users-panel.collapsed #users-header .label,
-  #users-panel.collapsed #users-list { display: none; }
-  #users-toggle {
-    background: none; border: none; cursor: pointer;
-    color: var(--text-muted);
-    padding: 2px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-  }
-  #users-toggle:hover { color: var(--text); }
-  #users-toggle svg { transition: transform .15s ease; }
-  #users-panel.collapsed #users-toggle svg { transform: rotate(180deg); }
   #users-list {
     list-style: none;
     overflow-y: auto;
-    padding: 6px 0;
+    padding: 8px 0;
     margin: 0;
     flex: 1;
   }
   #users-list li {
-    padding: 4px 12px;
+    padding: 4px 14px;
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  #online-badge { cursor: default; }
+
+  @media (max-width: 640px) {
+    #chat-body { flex-direction: column; }
+    #users-panel {
+      order: -1;
+      border-left: none;
+      border-bottom: 1px solid var(--border);
+      width: auto;
+      max-width: none;
+      min-width: 0;
+      max-height: 33vh;
+    }
+    #users-panel.collapsed-mobile { display: none; }
+    #online-badge { cursor: pointer; }
   }
 
   /* --- Icon buttons ------------------------------------------------------ */
@@ -421,12 +410,6 @@ export const HTML = `<!DOCTYPE html>
       </div>
     </div>
     <aside id="users-panel">
-      <div id="users-header">
-        <span class="label">Online</span>
-        <button id="users-toggle" aria-label="Toggle user list">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-      </div>
       <ul id="users-list"></ul>
     </aside>
   </div>
@@ -505,7 +488,6 @@ export const HTML = `<!DOCTYPE html>
   const onlineBadge = document.getElementById('online-badge');
   const usersList   = document.getElementById('users-list');
   const usersPanel  = document.getElementById('users-panel');
-  const usersToggle = document.getElementById('users-toggle');
   const logoutBtn   = document.getElementById('logout-btn');
   const profileBtn  = document.getElementById('profile-btn');
   const profileModal = document.getElementById('profile-modal');
@@ -866,12 +848,11 @@ export const HTML = `<!DOCTYPE html>
       usersList.appendChild(li);
     }
   }
-  if (localStorage.getItem('users-collapsed') === '1') {
-    usersPanel.classList.add('collapsed');
-  }
-  usersToggle.addEventListener('click', () => {
-    usersPanel.classList.toggle('collapsed');
-    localStorage.setItem('users-collapsed', usersPanel.classList.contains('collapsed') ? '1' : '0');
+  // Mobile: toggle the user panel via the "N online" badge.
+  onlineBadge.addEventListener('click', () => {
+    if (window.matchMedia('(max-width: 640px)').matches) {
+      usersPanel.classList.toggle('collapsed-mobile');
+    }
   });
 
   // --- Boot ---
