@@ -204,6 +204,50 @@ export const HTML = `<!DOCTYPE html>
   }
   #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+  /* --- Build badge + verify modal --------------------------------------- */
+  #build-badge {
+    display: none;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-family: monospace;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  #build-badge:hover { color: var(--text); border-color: var(--text-muted); }
+  #verify-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  #verify-modal.open { display: flex; }
+  #verify-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    width: 580px;
+    max-width: calc(100vw - 32px);
+    display: flex; flex-direction: column; gap: 10px;
+    font-size: 13px;
+  }
+  #verify-box h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  #verify-box dl { display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px; margin: 0; }
+  #verify-box dt { color: var(--text-muted); }
+  #verify-box dd { margin: 0; font-family: monospace; word-break: break-all; }
+  #verify-box a { color: var(--accent); }
+  #verify-box p { color: var(--text-muted); margin: 4px 0 0; }
+  #verify-box pre {
+    background: var(--bg); border: 1px solid var(--border);
+    padding: 8px; border-radius: 4px;
+    font-size: 11px; overflow-x: auto;
+    white-space: pre; margin: 0;
+  }
+  #verify-box .actions { display: flex; justify-content: flex-end; }
+
   /* --- Connection status ------------------------------------------------- */
   #conn-status {
     font-size: 11px;
@@ -236,6 +280,7 @@ export const HTML = `<!DOCTYPE html>
     <div class="left">
       <h1>Shoutbox</h1>
       <span id="online-badge">0 online</span>
+      <a id="build-badge" href="#" title="Click to verify this build"></a>
     </div>
     <div class="right">
       <button class="btn" id="profile-btn" title="Change username / color">Profile</button>
@@ -247,6 +292,25 @@ export const HTML = `<!DOCTYPE html>
   <div id="input-bar">
     <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
     <button class="btn btn-primary" id="send-btn">Send</button>
+  </div>
+</div>
+
+<!-- Verify modal -->
+<div id="verify-modal">
+  <div id="verify-box">
+    <h3>Build provenance</h3>
+    <dl>
+      <dt>Commit</dt><dd><a id="vm-commit-link" target="_blank" rel="noopener"></a></dd>
+      <dt>Built at</dt><dd id="vm-built-at"></dd>
+      <dt>Workflow</dt><dd><a id="vm-run-link" target="_blank" rel="noopener">view run</a></dd>
+      <dt>Repo</dt><dd><a id="vm-repo-link" target="_blank" rel="noopener"></a></dd>
+    </dl>
+    <p>This build is signed by GitHub Actions via Sigstore. Verify locally:</p>
+    <pre id="vm-recipe"></pre>
+    <p>CI also fetches the deployed bundle from Cloudflare after each deploy and fails the run if its hash differs from the signed bundle.</p>
+    <div class="actions">
+      <button class="btn" id="verify-close">Close</button>
+    </div>
   </div>
 </div>
 
@@ -531,7 +595,56 @@ export const HTML = `<!DOCTYPE html>
     showAuth();
   });
 
+  // --- Build provenance badge ---
+  const buildBadge   = document.getElementById('build-badge');
+  const verifyModal  = document.getElementById('verify-modal');
+  const vmCommitLink = document.getElementById('vm-commit-link');
+  const vmBuiltAt    = document.getElementById('vm-built-at');
+  const vmRunLink    = document.getElementById('vm-run-link');
+  const vmRepoLink   = document.getElementById('vm-repo-link');
+  const vmRecipe     = document.getElementById('vm-recipe');
+  const verifyClose  = document.getElementById('verify-close');
+  let versionInfo = null;
+
+  async function loadVersion() {
+    try {
+      const res = await fetch('/version.json');
+      if (!res.ok) return;
+      versionInfo = await res.json();
+      const sha = versionInfo.commit || 'unknown';
+      const short = sha === 'dev' ? 'dev' : sha.slice(0, 7);
+      buildBadge.textContent = 'build ' + short;
+      buildBadge.style.display = '';
+    } catch {}
+  }
+
+  buildBadge.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!versionInfo) return;
+    const sha  = versionInfo.commit || '';
+    const repo = versionInfo.repo || '';
+    const slug = repo.replace('https://github.com/', '');
+    const owner = slug.split('/')[0] || '';
+    const short = sha.slice(0, 12);
+    vmCommitLink.textContent = sha;
+    vmCommitLink.href = repo && sha !== 'dev' ? repo + '/commit/' + sha : '#';
+    vmBuiltAt.textContent = versionInfo.built_at || '—';
+    vmRunLink.href = versionInfo.workflow_run || '#';
+    vmRepoLink.textContent = slug;
+    vmRepoLink.href = repo;
+    vmRecipe.textContent =
+      'gh release download build-' + short + ' --repo ' + slug + '\n' +
+      'gh attestation verify index.js       --owner ' + owner + '\n' +
+      'gh attestation verify live-script.js --owner ' + owner;
+    verifyModal.classList.add('open');
+  });
+  verifyClose.addEventListener('click', () => verifyModal.classList.remove('open'));
+  verifyModal.addEventListener('click', (e) => {
+    if (e.target === verifyModal) verifyModal.classList.remove('open');
+  });
+
   // --- Boot ---
+  loadVersion();
   checkAuth();
 })();
 </script>
