@@ -900,6 +900,7 @@ export const HTML = `<!DOCTYPE html>
     resetConnectionState();
     authScreen.style.display = '';
     chatScreen.style.display = 'none';
+    try { showAuthForm('primary'); } catch {}
   }
 
   function showChat() {
@@ -1119,9 +1120,7 @@ export const HTML = `<!DOCTYPE html>
       if (res.ok) {
         if (data.mode === 'code') {
           pendingEmail = email;
-          authForm.style.display = 'none';
-          codeForm.style.display = 'flex';
-          authBack.style.display = 'inline';
+          showAuthForm('code');
           authStatus.textContent = 'Enter the 6-digit code we sent to ' + email;
           codeInput.value = '';
           codeInput.focus();
@@ -1157,9 +1156,7 @@ export const HTML = `<!DOCTYPE html>
       if (res.ok) {
         authStatus.textContent = '';
         devLink.innerHTML = '';
-        authBack.style.display = 'none';
-        codeForm.style.display = 'none';
-        authForm.style.display = 'flex';
+        showAuthForm('primary');
         pendingEmail = '';
         checkAuth();
       } else {
@@ -1173,12 +1170,9 @@ export const HTML = `<!DOCTYPE html>
   authBack.addEventListener('click', (e) => {
     e.preventDefault();
     pendingEmail = '';
-    codeForm.style.display = 'none';
-    authBack.style.display = 'none';
-    authForm.style.display = 'flex';
+    showAuthForm('primary');
     authStatus.textContent = '';
     devLink.innerHTML = '';
-    emailInput.focus();
   });
 
   // --- WebSocket ---
@@ -1336,6 +1330,69 @@ export const HTML = `<!DOCTYPE html>
   });
 
   // --- Profile modal ---
+  async function renderPasskeys() {
+    pkList.innerHTML = '';
+    try {
+      const res = await fetch('/auth/passkeys');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.passkeys || !data.passkeys.length) {
+        const row = document.createElement('div');
+        row.className = 'pk-row';
+        row.innerHTML = '<span class="pk-id" style="color:var(--text-muted)">No passkeys yet</span>';
+        pkList.appendChild(row);
+        return;
+      }
+      for (const p of data.passkeys) {
+        const row = document.createElement('div');
+        row.className = 'pk-row';
+        const id = document.createElement('span');
+        id.className = 'pk-id';
+        id.textContent = (p.createdAt ? new Date(p.createdAt).toLocaleDateString() + ' · ' : '') + (p.id.slice(0, 12) + '…');
+        const del = document.createElement('button');
+        del.className = 'btn btn-danger';
+        del.textContent = 'Remove';
+        del.addEventListener('click', async () => {
+          if (!confirm('Remove this passkey? You can still sign in with other passkeys or recovery codes.')) return;
+          const r = await fetch('/auth/passkeys/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: p.id }),
+          });
+          if (r.ok) renderPasskeys();
+          else alert('Failed to remove');
+        });
+        row.appendChild(id);
+        row.appendChild(del);
+        pkList.appendChild(row);
+      }
+    } catch {}
+  }
+
+  pkAddBtn.addEventListener('click', async () => {
+    if (!window.PublicKeyCredential) { alert('Passkeys not supported on this browser'); return; }
+    try {
+      const startRes = await fetch('/auth/webauthn/register/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.error || 'Failed');
+      const attestation = await passkeyCreate(startData.options);
+      const finRes = await fetch('/auth/webauthn/register/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: attestation }),
+      });
+      const finData = await finRes.json();
+      if (!finRes.ok) throw new Error(finData.error || 'Failed');
+      renderPasskeys();
+    } catch (e) {
+      alert((e && e.message) || 'Cancelled');
+    }
+  });
+
   profileBtn.addEventListener('click', () => {
     usernameInput.value = myUsername;
     colorInput.value = myColor.startsWith('#') ? myColor : '#5b8def';
@@ -1343,6 +1400,7 @@ export const HTML = `<!DOCTYPE html>
     colorPreview.style.color = colorInput.value;
     colorPreview.textContent = myUsername || 'Preview';
     notifyToggle.checked = notifyOn;
+    renderPasskeys();
     profileModal.classList.add('open');
   });
 
