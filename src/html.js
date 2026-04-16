@@ -243,6 +243,17 @@ export const HTML = `<!DOCTYPE html>
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
   #auth-primary { display: flex; gap: 8px; }
   #auth-primary .btn { padding: 8px 14px; font-size: 13px; }
+  #email-plea {
+    max-width: 320px;
+    color: #ff6b6b;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: center;
+    border: 1px solid rgba(255, 107, 107, .35);
+    background: rgba(255, 107, 107, .08);
+    padding: 8px 12px;
+    border-radius: 6px;
+  }
   #auth-alts { font-size: 12px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
@@ -526,6 +537,11 @@ export const HTML = `<!DOCTYPE html>
     <input type="email" id="email-input" placeholder="you@example.com" required autocomplete="email">
     <button type="submit" class="btn btn-primary">Continue</button>
   </form>
+  <p id="email-plea" style="display:none;">
+    Please use a passkey instead — I'd rather not have your email address.
+    Passkeys sign you in with Face ID, Touch ID, Windows Hello, or a hardware key
+    and sync across your devices automatically.
+  </p>
   <form id="code-form" style="display:none;">
     <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
     <button type="submit" class="btn btn-primary">Sign in</button>
@@ -540,10 +556,11 @@ export const HTML = `<!DOCTYPE html>
   <div id="auth-status"></div>
   <div id="dev-link"></div>
   <div id="auth-alts">
+    <a href="#" id="use-passkey" style="display:none;">Use passkey instead</a>
     <a href="#" id="use-email">Use email instead</a>
-    <span>·</span>
+    <span id="alts-sep">·</span>
     <a href="#" id="use-recovery">Use recovery code</a>
-    <span>·</span>
+    <span id="alts-sep2">·</span>
     <a href="#" id="auth-back" style="display:none;">Back</a>
   </div>
 </div>
@@ -675,7 +692,11 @@ export const HTML = `<!DOCTYPE html>
   const pkSigninBtn = document.getElementById('pk-signin-btn');
   const pkSignupBtn = document.getElementById('pk-signup-btn');
   const useEmail    = document.getElementById('use-email');
+  const usePasskey  = document.getElementById('use-passkey');
   const useRecovery = document.getElementById('use-recovery');
+  const altsSep     = document.getElementById('alts-sep');
+  const altsSep2    = document.getElementById('alts-sep2');
+  const emailPlea   = document.getElementById('email-plea');
   const recoveryForm = document.getElementById('recovery-form');
   const recoveryUser = document.getElementById('recovery-user');
   const recoveryCode = document.getElementById('recovery-code');
@@ -983,6 +1004,17 @@ export const HTML = `<!DOCTYPE html>
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
     authBack.style.display = which === 'primary' ? 'none' : 'inline';
+    // Only show the email plea on the initial email-entry page.
+    emailPlea.style.display = which === 'email' ? 'block' : 'none';
+    // Don't offer "Use email instead" once we're already in the email/code flow;
+    // instead offer a one-click path back to the passkey menu.
+    const inEmailFlow = which === 'email' || which === 'code';
+    useEmail.style.display = inEmailFlow ? 'none' : 'inline';
+    usePasskey.style.display = inEmailFlow ? 'inline' : 'none';
+    altsSep.style.display = 'inline';
+    // Hide the second separator when recovery is already shown/hidden in ways
+    // that make it dangle; "Back" being the trailing link covers this for us.
+    altsSep2.style.display = 'inline';
   }
 
   async function doPasskeySignin() {
@@ -1063,7 +1095,15 @@ export const HTML = `<!DOCTYPE html>
     e.preventDefault();
     showAuthForm('email');
     authStatus.textContent = '';
+    devLink.innerHTML = '';
     emailInput.focus();
+  });
+  usePasskey.addEventListener('click', (e) => {
+    e.preventDefault();
+    pendingEmail = '';
+    showAuthForm('primary');
+    authStatus.textContent = '';
+    devLink.innerHTML = '';
   });
   useRecovery.addEventListener('click', (e) => {
     e.preventDefault();
