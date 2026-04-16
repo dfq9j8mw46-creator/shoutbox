@@ -26,8 +26,22 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
-function setCookie(name, value, maxAge) {
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
+function setCookie(name, value, maxAge, { secure = true } = {}) {
+  const flags = ['Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAge}`];
+  if (secure) flags.push('Secure');
+  return `${name}=${encodeURIComponent(value)}; ${flags.join('; ')}`;
+}
+
+function challengeCookie(cid, maxAge, { secure = true } = {}) {
+  return setCookie('cid', cid, maxAge, { secure });
+}
+
+function isSecureRequest(request, env) {
+  // Production runs behind HTTPS (custom domain + BASE_URL starts with https://).
+  // For local `wrangler dev` over http://localhost we allow non-Secure cookies.
+  if (env.BASE_URL && env.BASE_URL.startsWith('https://')) return true;
+  const proto = request.headers.get('X-Forwarded-Proto') || new URL(request.url).protocol;
+  return proto === 'https:' || proto === 'https';
 }
 
 const SESSION_TTL = 60 * 60 * 24 * 7;
@@ -477,7 +491,13 @@ export default {
 
 async function handleRequest(request, env) {
     const url = new URL(request.url);
-    const secret = env.SECRET || 'dev-secret-change-me';
+    if (!env.SECRET) {
+      // Fail loud instead of silently using a constant key for HMAC,
+      // fingerprinting, rate-limit hashes, and defaults.
+      return json({ error: 'Server misconfigured: SECRET is not set' }, 500);
+    }
+    const secret = env.SECRET;
+    const secure = isSecureRequest(request, env);
 
     // ---- Auth routes -------------------------------------------------------
     if (url.pathname === '/auth/send' && request.method === 'POST') {
@@ -525,7 +545,8 @@ async function handleRequest(request, env) {
           return json({ ok: true, mode: 'code' });
         }
 
-        console.log('Dev login code for', email, ':', code);
+        // Dev mode: token is returned to the caller; don't log it so that
+        // re-enabling observability later doesn't leak auth secrets.
         return json({ ok: true, mode: 'code', dev_code: code });
       }
 
@@ -558,12 +579,17 @@ async function handleRequest(request, env) {
         return json({ ok: true, mode: 'link' });
       }
 
-      console.log('Dev magic link:', link);
+      // Dev mode: token is returned to the caller; don't log it so that
+      // re-enabling observability later doesn't leak auth secrets.
       return json({ ok: true, mode: 'link', dev_link: link });
     }
 
     // ---- Passkey (WebAuthn) ------------------------------------------------
     if (url.pathname === '/auth/webauthn/register/start' && request.method === 'POST') {
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const rl = await rateLimit(env, `reg_start_rl:${ipHash}`, 20, 60 * 60);
+      if (!rl.ok) return json({ error: 'Too many requests' }, 429);
+
       const body = await request.json().catch(() => ({}));
       const rpID = url.hostname;
       const sid = getCookie(request, 'sid');
@@ -610,11 +636,15 @@ async function handleRequest(request, env) {
       );
 
       return json({ options }, 200, {
-        'Set-Cookie': `cid=${cid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${CHALLENGE_TTL}`,
+        'Set-Cookie': challengeCookie(cid, CHALLENGE_TTL, { secure }),
       });
     }
 
     if (url.pathname === '/auth/webauthn/register/finish' && request.method === 'POST') {
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const rl = await rateLimit(env, `reg_finish_rl:${ipHash}`, 20, 60 * 60);
+      if (!rl.ok) return json({ error: 'Too many requests' }, 429);
+
       const body = await request.json().catch(() => ({}));
       const cid = getCookie(request, 'cid');
       if (!cid) return json({ error: 'No challenge' }, 400);
@@ -672,10 +702,10 @@ async function handleRequest(request, env) {
 
       // Only issue a session if this was a fresh signup; signed-in users already have one.
       const headers = new Headers({ 'Content-Type': 'application/json' });
-      headers.append('Set-Cookie', `cid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+      headers.append('Set-Cookie', challengeCookie('', 0, { secure }));
       if (ch.isNew) {
         const newSid = await createSession(env, ch.ownerId, secret);
-        headers.append('Set-Cookie', setCookie('sid', newSid, SESSION_TTL));
+        headers.append('Set-Cookie', setCookie('sid', newSid, SESSION_TTL, { secure }));
       }
 
       return new Response(JSON.stringify({ ok: true, recoveryCodes }), { status: 200, headers });
@@ -700,7 +730,7 @@ async function handleRequest(request, env) {
         { expirationTtl: CHALLENGE_TTL },
       );
       return json({ options }, 200, {
-        'Set-Cookie': `cid=${cid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${CHALLENGE_TTL}`,
+        'Set-Cookie': challengeCookie(cid, CHALLENGE_TTL, { secure }),
       });
     }
 
@@ -748,8 +778,8 @@ async function handleRequest(request, env) {
 
       const newSid = await createSession(env, cred.ownerId, secret);
       const headers = new Headers({ 'Content-Type': 'application/json' });
-      headers.append('Set-Cookie', setCookie('sid', newSid, SESSION_TTL));
-      headers.append('Set-Cookie', `cid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+      headers.append('Set-Cookie', setCookie('sid', newSid, SESSION_TTL, { secure }));
+      headers.append('Set-Cookie', challengeCookie('', 0, { secure }));
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
     }
 
@@ -856,7 +886,7 @@ async function handleRequest(request, env) {
       rec.lockedUntil = 0;
       await env.KV.put(`recovery:${ownerId}`, JSON.stringify(rec));
       const newSid = await createSession(env, ownerId, secret);
-      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', newSid, SESSION_TTL) });
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', newSid, SESSION_TTL, { secure }) });
     }
 
     if (url.pathname === '/auth/recovery/regenerate' && request.method === 'POST') {
@@ -864,6 +894,11 @@ async function handleRequest(request, env) {
       if (!sid) return json({ error: 'Not signed in' }, 401);
       const synced = await syncSessionWithProfile(env, sid, secret);
       if (!synced) return json({ error: 'Not signed in' }, 401);
+      // Each call runs 10 PBKDF2 rounds near the Worker CPU cap. Cap to 3/hour.
+      const rl = await rateLimit(env, `regen_rl:${synced.session.email}`, 3, 60 * 60);
+      if (!rl.ok) {
+        return json({ error: `Try again in ${Math.ceil(rl.retryAfterSec / 60)} min` }, 429);
+      }
       const codes = await createRecoveryCodes(env, synced.session.email);
       return json({ ok: true, recoveryCodes: codes });
     }
@@ -890,7 +925,7 @@ async function handleRequest(request, env) {
       }
       await env.KV.delete(key);
       const sid = await createSession(env, email, secret);
-      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7) });
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7, { secure }) });
     }
 
     if (url.pathname === '/auth/verify' && request.method === 'GET') {
@@ -912,7 +947,7 @@ async function handleRequest(request, env) {
         status: 302,
         headers: {
           Location: '/',
-          'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7),
+          'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7, { secure }),
         },
       });
     }
@@ -1019,7 +1054,7 @@ async function handleRequest(request, env) {
           try { await removeSessionIndex(env, JSON.parse(raw).email, sid); } catch {}
         }
       }
-      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', '', 0) });
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', '', 0, { secure }) });
     }
 
     if (url.pathname === '/auth/delete' && request.method === 'POST') {
@@ -1044,7 +1079,7 @@ async function handleRequest(request, env) {
       await deleteAllCredentials(env, session.email);
       await deleteAllSessions(env, session.email);
 
-      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', '', 0) });
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', '', 0, { secure }) });
     }
 
     // ---- WebSocket upgrade → Durable Object --------------------------------

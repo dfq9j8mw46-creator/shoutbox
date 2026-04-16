@@ -145,6 +145,8 @@ export const HTML = `<!DOCTYPE html>
   /* --- Messages area ----------------------------------------------------- */
   #messages {
     flex: 1;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
     padding: 8px 12px 8px 4px;
     display: flex;
@@ -157,10 +159,12 @@ export const HTML = `<!DOCTYPE html>
     line-height: 1.45;
     padding: 2px 0 2px 6px;
     border-left: 2px solid transparent;
+    max-width: 100%;
     min-width: 0;
     overflow-wrap: anywhere;
-    word-break: break-word;
+    word-break: break-all;
   }
+  .msg .text { overflow-wrap: anywhere; word-break: break-all; }
   .msg .ts {
     color: var(--text-muted);
     font-size: 11px;
@@ -1177,12 +1181,24 @@ export const HTML = `<!DOCTYPE html>
           codeInput.value = '';
           codeInput.focus();
           if (data.dev_code) {
-            devLink.innerHTML = '<span>Dev code: <b>' + data.dev_code + '</b></span>';
+            devLink.textContent = '';
+            const label = document.createElement('span');
+            label.textContent = 'Dev code: ';
+            const code = document.createElement('b');
+            code.textContent = data.dev_code;
+            label.appendChild(code);
+            devLink.appendChild(label);
           }
         } else {
           authStatus.textContent = 'Check your email for the login link!';
           if (data.dev_link) {
-            devLink.innerHTML = '<a href="' + data.dev_link + '" target="_blank">Dev: click here to sign in</a>';
+            devLink.textContent = '';
+            const a = document.createElement('a');
+            a.href = data.dev_link;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.textContent = 'Dev: click here to sign in';
+            devLink.appendChild(a);
           }
         }
       } else {
