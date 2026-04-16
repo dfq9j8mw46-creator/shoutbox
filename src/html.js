@@ -632,10 +632,11 @@ export const HTML = `<!DOCTYPE html>
     vmRunLink.href = versionInfo.workflow_run || '#';
     vmRepoLink.textContent = slug;
     vmRepoLink.href = repo;
-    vmRecipe.textContent =
-      'gh release download build-' + short + ' --repo ' + slug + '\n' +
-      'gh attestation verify index.js       --owner ' + owner + '\n' +
-      'gh attestation verify live-script.js --owner ' + owner;
+    vmRecipe.textContent = [
+      'gh release download build-' + short + ' --repo ' + slug,
+      'gh attestation verify index.js       --owner ' + owner,
+      'gh attestation verify live-script.js --owner ' + owner,
+    ].join(String.fromCharCode(10));
     verifyModal.classList.add('open');
   });
   verifyClose.addEventListener('click', () => verifyModal.classList.remove('open'));
