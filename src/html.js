@@ -64,7 +64,9 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
   }
   #users-panel {
-    border-left: 1px solid var(--border);
+    margin: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     background: var(--surface);
     display: flex;
     flex-direction: column;
@@ -73,6 +75,8 @@ export const HTML = `<!DOCTYPE html>
     min-width: 140px;
     max-width: 220px;
     width: max-content;
+    align-self: flex-start;
+    max-height: calc(100% - 24px);
   }
   #users-list {
     list-style: none;
@@ -95,12 +99,15 @@ export const HTML = `<!DOCTYPE html>
     #chat-body { flex-direction: column; }
     #users-panel {
       order: -1;
-      border-left: none;
+      margin: 0;
+      border: none;
       border-bottom: 1px solid var(--border);
+      border-radius: 0;
       width: auto;
       max-width: none;
       min-width: 0;
       max-height: 33vh;
+      align-self: auto;
     }
     #users-panel.collapsed-mobile { display: none; }
     #online-badge { cursor: pointer; }

@@ -117,14 +117,18 @@ export class ChatRoom {
 
   broadcastOnline() {
     const sockets = this.state.getWebSockets();
-    const users = sockets.map((ws) => {
+    const byKey = new Map();
+    for (const ws of sockets) {
       const a = ws.deserializeAttachment() || {};
-      return {
+      const key = a.fingerprint || a.username || 'anon';
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
         username: a.username || 'Anon',
         color: a.color || '#888888',
         fingerprint: a.fingerprint || '',
-      };
-    });
-    this.broadcast({ type: 'online', count: sockets.length, users });
+      });
+    }
+    const users = [...byKey.values()];
+    this.broadcast({ type: 'online', count: users.length, users });
   }
 }
