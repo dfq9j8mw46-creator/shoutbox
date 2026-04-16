@@ -92,6 +92,34 @@ async function deleteAllSessions(env, email) {
   await env.KV.delete(key);
 }
 
+function authMode(ua) {
+  if (!ua) return 'link';
+  if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return 'code';
+  if (/Macintosh|Mac OS X/i.test(ua)) return 'code';
+  return 'link';
+}
+
+function generateCode() {
+  const buf = new Uint8Array(4);
+  crypto.getRandomValues(buf);
+  const n = ((buf[0] << 24 >>> 0) + (buf[1] << 16) + (buf[2] << 8) + buf[3]) % 1000000;
+  return n.toString().padStart(6, '0');
+}
+
+async function createSession(env, email, secret) {
+  const sid = crypto.randomUUID();
+  const profile = await loadOrCreateProfile(env, email, secret);
+  const session = JSON.stringify({
+    email,
+    username: profile.username,
+    color: profile.color,
+    fingerprint: profile.fingerprint,
+  });
+  await env.KV.put(`session:${sid}`, session, { expirationTtl: 60 * 60 * 24 * 7 });
+  await addSessionIndex(env, email, sid);
+  return sid;
+}
+
 async function fingerprint(secret, email) {
   const h = await hmac(secret, 'fp:' + email.toLowerCase().trim());
   return h.slice(0, 6);
@@ -158,14 +186,49 @@ export default {
         return json({ error: 'Invalid email' }, 400);
       }
 
-      // Create magic token
+      const mode = authMode(request.headers.get('User-Agent') || '');
+
+      if (mode === 'code') {
+        const code = generateCode();
+        await env.KV.put(
+          `magic:code:${email}`,
+          JSON.stringify({ code, attempts: 0 }),
+          { expirationTtl: 600 },
+        );
+
+        if (env.EMAIL_API_KEY) {
+          const emailRes = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.EMAIL_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: env.EMAIL_FROM || 'chat@example.com',
+              to: [email],
+              subject: `Your chat login code: ${code}`,
+              html: `<p>Your login code:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${code}</p><p>Expires in 10 minutes.</p>`,
+            }),
+          });
+          if (!emailRes.ok) {
+            const err = await emailRes.text();
+            console.error('Email API error:', err);
+            return json({ error: 'Failed to send email' }, 500);
+          }
+          return json({ ok: true, mode: 'code' });
+        }
+
+        console.log('Dev login code for', email, ':', code);
+        return json({ ok: true, mode: 'code', dev_code: code });
+      }
+
+      // Link mode
       const token = crypto.randomUUID() + crypto.randomUUID();
-      await env.KV.put(`magic:${token}`, email, { expirationTtl: 600 }); // 10 min
+      await env.KV.put(`magic:${token}`, email, { expirationTtl: 600 });
 
       const base = env.BASE_URL || url.origin;
       const link = `${base}/auth/verify?token=${token}`;
 
-      // Send email via Resend (or skip in dev)
       if (env.EMAIL_API_KEY) {
         const emailRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -185,12 +248,36 @@ export default {
           console.error('Email API error:', err);
           return json({ error: 'Failed to send email' }, 500);
         }
-        return json({ ok: true });
+        return json({ ok: true, mode: 'link' });
       }
 
-      // Dev mode: return the link directly
       console.log('Dev magic link:', link);
-      return json({ ok: true, dev_link: link });
+      return json({ ok: true, mode: 'link', dev_link: link });
+    }
+
+    if (url.pathname === '/auth/verify-code' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const email = (body.email || '').trim().toLowerCase();
+      const code = (body.code || '').trim();
+      if (!email || !/^\d{6}$/.test(code)) {
+        return json({ error: 'Invalid code' }, 400);
+      }
+      const key = `magic:code:${email}`;
+      const raw = await env.KV.get(key);
+      if (!raw) return json({ error: 'Code expired — request a new one' }, 400);
+      const record = JSON.parse(raw);
+      if (record.attempts >= 5) {
+        await env.KV.delete(key);
+        return json({ error: 'Too many attempts — request a new code' }, 429);
+      }
+      if (record.code !== code) {
+        record.attempts += 1;
+        await env.KV.put(key, JSON.stringify(record), { expirationTtl: 600 });
+        return json({ error: 'Wrong code' }, 400);
+      }
+      await env.KV.delete(key);
+      const sid = await createSession(env, email, secret);
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7) });
     }
 
     if (url.pathname === '/auth/verify' && request.method === 'GET') {
@@ -206,17 +293,7 @@ export default {
       }
       await env.KV.delete(`magic:${token}`);
 
-      // Create session (load durable profile, or mint default on first login)
-      const sid = crypto.randomUUID();
-      const profile = await loadOrCreateProfile(env, email, secret);
-      const session = JSON.stringify({
-        email,
-        username: profile.username,
-        color: profile.color,
-        fingerprint: profile.fingerprint,
-      });
-      await env.KV.put(`session:${sid}`, session, { expirationTtl: 60 * 60 * 24 * 7 }); // 7 days
-      await addSessionIndex(env, email, sid);
+      const sid = await createSession(env, email, secret);
 
       return new Response(null, {
         status: 302,

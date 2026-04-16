@@ -156,8 +156,9 @@ export const HTML = `<!DOCTYPE html>
     font-size: 13px;
     line-height: 1.45;
     padding: 2px 0;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .msg .ts {
     color: var(--text-muted);
@@ -180,7 +181,42 @@ export const HTML = `<!DOCTYPE html>
     background: var(--surface);
     border-top: 1px solid var(--border);
     flex-shrink: 0;
+    position: relative;
   }
+
+  /* --- @mention autocomplete -------------------------------------------- */
+  #mention-suggest {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 12px;
+    min-width: 180px;
+    max-width: 280px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 16px rgba(0,0,0,.45);
+    display: none;
+    z-index: 20;
+  }
+  #mention-suggest.open { display: block; }
+  .mention-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mention-item .m-name { font-weight: 600; }
+  .mention-item .m-badge {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+  .mention-item.active, .mention-item:hover { background: var(--border); }
   #msg-input {
     flex: 1;
     background: var(--bg);
@@ -205,8 +241,8 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-screen h2 { font-size: 20px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
-  #auth-form { display: flex; gap: 8px; }
-  #auth-form input {
+  #auth-form, #code-form { display: flex; gap: 8px; }
+  #auth-form input, #code-form input {
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
@@ -216,7 +252,8 @@ export const HTML = `<!DOCTYPE html>
     width: 240px;
     outline: none;
   }
-  #auth-form input:focus { border-color: var(--accent); }
+  #auth-form input:focus, #code-form input:focus { border-color: var(--accent); }
+  #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   #auth-status { color: var(--text-muted); font-size: 12px; min-height: 18px; }
   #dev-link { margin-top: 8px; }
   #dev-link a { color: var(--accent); font-size: 12px; }
@@ -343,6 +380,25 @@ export const HTML = `<!DOCTYPE html>
     user-select: all;
   }
   #users-list li .fp { margin-left: 6px; margin-right: 0; float: right; }
+
+  /* --- Mentions ---------------------------------------------------------- */
+  .mention { color: var(--accent); font-weight: 600; }
+  .msg.mentioned {
+    background: rgba(91,141,239,.12);
+    border-left: 2px solid var(--accent);
+    padding: 2px 0 2px 6px;
+  }
+
+  /* --- Profile toggle row ------------------------------------------------ */
+  #profile-box .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+  #profile-box .toggle-row input { cursor: pointer; }
   #user-modal {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,.6);
@@ -384,13 +440,18 @@ export const HTML = `<!DOCTYPE html>
 <!-- Auth screen -->
 <div id="auth-screen">
   <h1>Shoutbox</h1>
-  <p>Sign in with your email to join the chat. You'll get a magic link — no password needed.</p>
+  <p id="auth-intro">Sign in with your email to join the chat. No password needed.</p>
   <form id="auth-form">
     <input type="email" id="email-input" placeholder="you@example.com" required autocomplete="email">
-    <button type="submit" class="btn btn-primary">Send link</button>
+    <button type="submit" class="btn btn-primary">Continue</button>
+  </form>
+  <form id="code-form" style="display:none;">
+    <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+    <button type="submit" class="btn btn-primary">Sign in</button>
   </form>
   <div id="auth-status"></div>
   <div id="dev-link"></div>
+  <a href="#" id="auth-back" style="display:none; color: var(--text-muted); font-size: 12px;">Use a different email</a>
 </div>
 
 <!-- Chat screen (hidden until authed) -->
@@ -415,6 +476,7 @@ export const HTML = `<!DOCTYPE html>
       <div id="conn-status">Reconnecting...</div>
       <div id="messages"></div>
       <div id="input-bar">
+        <div id="mention-suggest" role="listbox"></div>
         <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
         <button class="btn btn-primary" id="send-btn">Send</button>
       </div>
@@ -476,6 +538,10 @@ export const HTML = `<!DOCTYPE html>
         <span id="color-preview">Preview</span>
       </div>
     </div>
+    <label class="toggle-row" for="notify-toggle">
+      <input type="checkbox" id="notify-toggle">
+      Play sound when mentioned (@username)
+    </label>
     <div class="actions">
       <button class="btn btn-danger" id="profile-delete">Delete account</button>
       <span class="spacer"></span>
@@ -492,8 +558,12 @@ export const HTML = `<!DOCTYPE html>
   const chatScreen  = document.getElementById('chat-screen');
   const authForm    = document.getElementById('auth-form');
   const emailInput  = document.getElementById('email-input');
+  const codeForm    = document.getElementById('code-form');
+  const codeInput   = document.getElementById('code-input');
+  const authBack    = document.getElementById('auth-back');
   const authStatus  = document.getElementById('auth-status');
   const devLink     = document.getElementById('dev-link');
+  let pendingEmail  = '';
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
@@ -510,6 +580,8 @@ export const HTML = `<!DOCTYPE html>
   const profileSave = document.getElementById('profile-save');
   const profileCancel = document.getElementById('profile-cancel');
   const profileDelete = document.getElementById('profile-delete');
+  const notifyToggle = document.getElementById('notify-toggle');
+  const suggestEl   = document.getElementById('mention-suggest');
   const connStatus  = document.getElementById('conn-status');
 
   let ws = null;
@@ -517,6 +589,142 @@ export const HTML = `<!DOCTYPE html>
   let myColor = '';
   let reconnectTimer = null;
   let reconnectDelay = 1000;
+  let notifyOn = localStorage.getItem('notify') !== 'off';
+  let audioCtx = null;
+  const knownUsers = new Map(); // key: lowercase username → { username, color, online }
+  let suggestItems = [];
+  let suggestIdx = 0;
+  let suggestToken = null;
+
+  function addKnownUser(username, color, online) {
+    if (!username) return;
+    const key = username.toLowerCase();
+    const cur = knownUsers.get(key) || { username, color: '', online: false };
+    cur.username = username;
+    if (color) cur.color = color;
+    if (online) cur.online = true;
+    knownUsers.set(key, cur);
+  }
+  function setOnlineUsers(users) {
+    for (const v of knownUsers.values()) v.online = false;
+    for (const u of users) addKnownUser(u.username, u.color, true);
+  }
+
+  function getMentionToken() {
+    if (document.activeElement !== msgInput) return null;
+    const pos = msgInput.selectionStart;
+    const before = msgInput.value.slice(0, pos);
+    const m = before.match(/@([a-zA-Z0-9_\\-]*)$/);
+    if (!m) return null;
+    const start = pos - m[0].length;
+    if (start > 0 && !/\\s/.test(before[start - 1])) return null;
+    return { query: m[1], start, end: pos };
+  }
+
+  function hideSuggest() {
+    suggestEl.classList.remove('open');
+    suggestItems = [];
+    suggestToken = null;
+  }
+
+  function renderSuggest() {
+    suggestEl.innerHTML = '';
+    suggestItems.forEach((u, i) => {
+      const el = document.createElement('div');
+      el.className = 'mention-item' + (i === suggestIdx ? ' active' : '');
+      el.dataset.idx = String(i);
+      const name = document.createElement('span');
+      name.className = 'm-name';
+      name.style.color = u.color || '';
+      name.textContent = u.username;
+      el.appendChild(name);
+      if (u.online) {
+        const b = document.createElement('span');
+        b.className = 'm-badge';
+        b.textContent = 'online';
+        el.appendChild(b);
+      }
+      suggestEl.appendChild(el);
+    });
+  }
+
+  function updateSuggest() {
+    const token = getMentionToken();
+    if (!token) { hideSuggest(); return; }
+    const q = token.query.toLowerCase();
+    const items = [...knownUsers.values()]
+      .filter((u) => !q || u.username.toLowerCase().includes(q))
+      .filter((u) => u.username.toLowerCase() !== (myUsername || '').toLowerCase())
+      .sort((a, b) => {
+        if (a.online !== b.online) return a.online ? -1 : 1;
+        const as = a.username.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.username.toLowerCase().startsWith(q) ? 0 : 1;
+        if (as !== bs) return as - bs;
+        return a.username.localeCompare(b.username);
+      })
+      .slice(0, 8);
+    if (items.length === 0) { hideSuggest(); return; }
+    suggestItems = items;
+    suggestIdx = 0;
+    suggestToken = token;
+    renderSuggest();
+    suggestEl.classList.add('open');
+  }
+
+  function pickMention(i) {
+    const u = suggestItems[i];
+    if (!u || !suggestToken) return;
+    const v = msgInput.value;
+    const insert = '@' + u.username + ' ';
+    msgInput.value = v.slice(0, suggestToken.start) + insert + v.slice(suggestToken.end);
+    const pos = suggestToken.start + insert.length;
+    msgInput.setSelectionRange(pos, pos);
+    hideSuggest();
+    msgInput.focus();
+  }
+
+  function playNotification() {
+    if (!notifyOn) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const t = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(880, t);
+      o.frequency.setValueAtTime(1320, t + 0.08);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t);
+      o.stop(t + 0.32);
+    } catch {}
+  }
+
+  function renderTextWithMentions(parent, text) {
+    const re = /@([a-zA-Z0-9_\\-]{1,20})/g;
+    let last = 0;
+    let mentionedMe = false;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) {
+        parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      }
+      const span = document.createElement('span');
+      span.className = 'mention';
+      span.textContent = m[0];
+      parent.appendChild(span);
+      if (myUsername && m[1].toLowerCase() === myUsername.toLowerCase()) {
+        mentionedMe = true;
+      }
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) {
+      parent.appendChild(document.createTextNode(text.slice(last)));
+    }
+    return mentionedMe;
+  }
 
   // --- Auth check ---
   async function checkAuth() {
@@ -559,9 +767,22 @@ export const HTML = `<!DOCTYPE html>
       });
       const data = await res.json();
       if (res.ok) {
-        authStatus.textContent = 'Check your email for the login link!';
-        if (data.dev_link) {
-          devLink.innerHTML = '<a href="' + data.dev_link + '" target="_blank">Dev: click here to sign in</a>';
+        if (data.mode === 'code') {
+          pendingEmail = email;
+          authForm.style.display = 'none';
+          codeForm.style.display = 'flex';
+          authBack.style.display = 'inline';
+          authStatus.textContent = 'Enter the 6-digit code we sent to ' + email;
+          codeInput.value = '';
+          codeInput.focus();
+          if (data.dev_code) {
+            devLink.innerHTML = '<span>Dev code: <b>' + data.dev_code + '</b></span>';
+          }
+        } else {
+          authStatus.textContent = 'Check your email for the login link!';
+          if (data.dev_link) {
+            devLink.innerHTML = '<a href="' + data.dev_link + '" target="_blank">Dev: click here to sign in</a>';
+          }
         }
       } else {
         authStatus.textContent = data.error || 'Something went wrong';
@@ -569,6 +790,45 @@ export const HTML = `<!DOCTYPE html>
     } catch {
       authStatus.textContent = 'Network error';
     }
+  });
+
+  codeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = codeInput.value.trim();
+    if (!/^\\d{6}$/.test(code) || !pendingEmail) return;
+    authStatus.textContent = 'Verifying...';
+    try {
+      const res = await fetch('/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        authStatus.textContent = '';
+        devLink.innerHTML = '';
+        authBack.style.display = 'none';
+        codeForm.style.display = 'none';
+        authForm.style.display = 'flex';
+        pendingEmail = '';
+        checkAuth();
+      } else {
+        authStatus.textContent = data.error || 'Invalid code';
+      }
+    } catch {
+      authStatus.textContent = 'Network error';
+    }
+  });
+
+  authBack.addEventListener('click', (e) => {
+    e.preventDefault();
+    pendingEmail = '';
+    codeForm.style.display = 'none';
+    authBack.style.display = 'none';
+    authForm.style.display = 'flex';
+    authStatus.textContent = '';
+    devLink.innerHTML = '';
+    emailInput.focus();
   });
 
   // --- WebSocket ---
@@ -587,18 +847,20 @@ export const HTML = `<!DOCTYPE html>
 
       if (data.type === 'history') {
         messagesDiv.innerHTML = '';
-        data.messages.forEach((m) => appendMsg(m));
+        data.messages.forEach((m) => appendMsg(m, false));
         scrollBottom();
       }
 
       if (data.type === 'msg') {
-        appendMsg(data);
+        appendMsg(data, true);
         scrollBottom();
       }
 
       if (data.type === 'online') {
         onlineBadge.textContent = data.count + ' online';
-        renderUsers(data.users || []);
+        const users = data.users || [];
+        setOnlineUsers(users);
+        renderUsers(users);
       }
     });
 
@@ -622,7 +884,8 @@ export const HTML = `<!DOCTYPE html>
   }
 
   // --- Messages ---
-  function appendMsg(m) {
+  function appendMsg(m, isLive) {
+    addKnownUser(m.username, m.color, false);
     const div = document.createElement('div');
     div.className = 'msg';
 
@@ -637,17 +900,17 @@ export const HTML = `<!DOCTYPE html>
     name.textContent = m.username;
     name.dataset.username = m.username;
 
-    const fp = document.createElement('span');
-    fp.className = 'fp';
-    fp.textContent = m.fingerprint ? '#' + m.fingerprint : '';
-
     const text = document.createElement('span');
     text.className = 'text';
-    text.textContent = m.text;
+    const mentionedMe = renderTextWithMentions(text, m.text);
+
+    if (mentionedMe && m.username !== myUsername) {
+      div.classList.add('mentioned');
+      if (isLive) playNotification();
+    }
 
     div.appendChild(ts);
     div.appendChild(name);
-    if (m.fingerprint) div.appendChild(fp);
     div.appendChild(text);
     messagesDiv.appendChild(div);
 
@@ -672,10 +935,46 @@ export const HTML = `<!DOCTYPE html>
 
   sendBtn.addEventListener('click', sendMsg);
   msgInput.addEventListener('keydown', (e) => {
+    if (suggestEl.classList.contains('open') && suggestItems.length) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        suggestIdx = (suggestIdx + 1) % suggestItems.length;
+        renderSuggest();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        suggestIdx = (suggestIdx - 1 + suggestItems.length) % suggestItems.length;
+        renderSuggest();
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        pickMention(suggestIdx);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        hideSuggest();
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMsg();
     }
+  });
+  msgInput.addEventListener('input', updateSuggest);
+  msgInput.addEventListener('click', updateSuggest);
+  msgInput.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') updateSuggest();
+  });
+  msgInput.addEventListener('blur', () => setTimeout(hideSuggest, 120));
+  suggestEl.addEventListener('mousedown', (e) => {
+    const item = e.target.closest('.mention-item');
+    if (!item) return;
+    e.preventDefault();
+    pickMention(Number(item.dataset.idx));
   });
 
   // --- Profile modal ---
@@ -685,6 +984,7 @@ export const HTML = `<!DOCTYPE html>
     colorHex.value = colorInput.value;
     colorPreview.style.color = colorInput.value;
     colorPreview.textContent = myUsername || 'Preview';
+    notifyToggle.checked = notifyOn;
     profileModal.classList.add('open');
   });
 
@@ -754,6 +1054,8 @@ export const HTML = `<!DOCTYPE html>
         const data = await res.json();
         myUsername = data.username;
         myColor = data.color;
+        notifyOn = notifyToggle.checked;
+        localStorage.setItem('notify', notifyOn ? 'on' : 'off');
         // Notify the Durable Object of the profile change
         if (ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'profile', username: myUsername, color: myColor }));
