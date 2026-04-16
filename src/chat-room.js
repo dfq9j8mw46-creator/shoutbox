@@ -74,13 +74,19 @@ export class ChatRoom {
 
     // Allow live profile updates over the socket
     if (data.type === 'profile') {
+      let changed = false;
       if (typeof data.username === 'string' && /^[a-zA-Z0-9_\-]{1,20}$/.test(data.username)) {
         attachment.username = data.username;
+        changed = true;
       }
       if (typeof data.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.color)) {
         attachment.color = data.color;
+        changed = true;
       }
-      ws.serializeAttachment(attachment);
+      if (changed) {
+        ws.serializeAttachment(attachment);
+        this.broadcastOnline();
+      }
     }
   }
 
@@ -108,6 +114,11 @@ export class ChatRoom {
   }
 
   broadcastOnline() {
-    this.broadcast({ type: 'online', count: this.state.getWebSockets().length });
+    const sockets = this.state.getWebSockets();
+    const users = sockets.map((ws) => {
+      const a = ws.deserializeAttachment() || {};
+      return { username: a.username || 'Anon', color: a.color || '#888888' };
+    });
+    this.broadcast({ type: 'online', count: sockets.length, users });
   }
 }

@@ -17,12 +17,15 @@ export const HTML = `<!DOCTYPE html>
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
     background: var(--bg);
     color: var(--text);
     height: 100dvh;
     display: flex;
     flex-direction: column;
+  }
+  pre, code, kbd, samp, #color-hex, #vm-recipe, #verify-box dd {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
   /* --- Header bar -------------------------------------------------------- */
@@ -45,7 +48,89 @@ export const HTML = `<!DOCTYPE html>
     padding: 2px 8px;
     border-radius: 10px;
   }
-  #header .right { display: flex; align-items: center; gap: 8px; }
+  #header .right { display: flex; align-items: center; gap: 6px; }
+
+  /* --- Chat body + users panel ------------------------------------------ */
+  #chat-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  #main-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  #users-panel {
+    width: 180px;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    transition: width .15s ease;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  #users-panel.collapsed { width: 32px; }
+  #users-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 11px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #users-panel.collapsed #users-header { padding: 8px 6px; justify-content: center; }
+  #users-panel.collapsed #users-header .label,
+  #users-panel.collapsed #users-list { display: none; }
+  #users-toggle {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted);
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  #users-toggle:hover { color: var(--text); }
+  #users-toggle svg { transition: transform .15s ease; }
+  #users-panel.collapsed #users-toggle svg { transform: rotate(180deg); }
+  #users-list {
+    list-style: none;
+    overflow-y: auto;
+    padding: 6px 0;
+    margin: 0;
+    flex: 1;
+  }
+  #users-list li {
+    padding: 4px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* --- Icon buttons ------------------------------------------------------ */
+  .icon-btn {
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+  .icon-btn svg { display: block; }
+
+  /* --- Mobile: prevent iOS auto-zoom on input focus --------------------- */
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px !important; }
+  }
 
   /* --- Small buttons ----------------------------------------------------- */
   .btn {
@@ -283,15 +368,32 @@ export const HTML = `<!DOCTYPE html>
       <a id="build-badge" href="#" title="Click to verify this build"></a>
     </div>
     <div class="right">
-      <button class="btn" id="profile-btn" title="Change username / color">Profile</button>
-      <button class="btn" id="logout-btn">Logout</button>
+      <button class="btn icon-btn" id="profile-btn" title="Profile" aria-label="Profile">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+      <button class="btn icon-btn" id="logout-btn" title="Logout" aria-label="Logout">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
   </div>
-  <div id="conn-status">Reconnecting...</div>
-  <div id="messages"></div>
-  <div id="input-bar">
-    <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
-    <button class="btn btn-primary" id="send-btn">Send</button>
+  <div id="chat-body">
+    <div id="main-col">
+      <div id="conn-status">Reconnecting...</div>
+      <div id="messages"></div>
+      <div id="input-bar">
+        <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
+        <button class="btn btn-primary" id="send-btn">Send</button>
+      </div>
+    </div>
+    <aside id="users-panel">
+      <div id="users-header">
+        <span class="label">Online</span>
+        <button id="users-toggle" aria-label="Toggle user list">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      <ul id="users-list"></ul>
+    </aside>
   </div>
 </div>
 
@@ -350,6 +452,9 @@ export const HTML = `<!DOCTYPE html>
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
   const onlineBadge = document.getElementById('online-badge');
+  const usersList   = document.getElementById('users-list');
+  const usersPanel  = document.getElementById('users-panel');
+  const usersToggle = document.getElementById('users-toggle');
   const logoutBtn   = document.getElementById('logout-btn');
   const profileBtn  = document.getElementById('profile-btn');
   const profileModal = document.getElementById('profile-modal');
@@ -447,6 +552,7 @@ export const HTML = `<!DOCTYPE html>
 
       if (data.type === 'online') {
         onlineBadge.textContent = data.count + ' online';
+        renderUsers(data.users || []);
       }
     });
 
@@ -642,6 +748,25 @@ export const HTML = `<!DOCTYPE html>
   verifyClose.addEventListener('click', () => verifyModal.classList.remove('open'));
   verifyModal.addEventListener('click', (e) => {
     if (e.target === verifyModal) verifyModal.classList.remove('open');
+  });
+
+  // --- Online users panel ---
+  function renderUsers(users) {
+    usersList.innerHTML = '';
+    const sorted = users.slice().sort((a, b) => a.username.localeCompare(b.username));
+    for (const u of sorted) {
+      const li = document.createElement('li');
+      li.style.color = u.color;
+      li.textContent = u.username;
+      usersList.appendChild(li);
+    }
+  }
+  if (localStorage.getItem('users-collapsed') === '1') {
+    usersPanel.classList.add('collapsed');
+  }
+  usersToggle.addEventListener('click', () => {
+    usersPanel.classList.toggle('collapsed');
+    localStorage.setItem('users-collapsed', usersPanel.classList.contains('collapsed') ? '1' : '0');
   });
 
   // --- Boot ---
