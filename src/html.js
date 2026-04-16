@@ -241,6 +241,72 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-screen h2 { font-size: 20px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
+  #auth-primary { display: flex; gap: 8px; }
+  #auth-primary .btn { padding: 8px 14px; font-size: 13px; }
+  #auth-alts { font-size: 12px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  #auth-alts a { color: var(--accent); text-decoration: none; }
+  #auth-alts a:hover { text-decoration: underline; }
+  #signup-form, #recovery-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  #signup-form input { width: 240px; }
+  #recovery-form input { width: 180px; }
+  #signup-form input, #recovery-form input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+  }
+  #signup-form input:focus, #recovery-form input:focus { border-color: var(--accent); }
+
+  /* --- Recovery codes modal --------------------------------------------- */
+  #rc-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.75);
+    align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  #rc-modal.open { display: flex; }
+  #rc-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    display: flex; flex-direction: column; gap: 10px;
+    font-size: 13px;
+  }
+  #rc-box h3 { font-size: 15px; font-weight: 600; }
+  #rc-box p { color: var(--text-muted); font-size: 12px; }
+  #rc-codes {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 10px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre;
+    user-select: all;
+  }
+  #rc-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* --- Passkey list in profile ------------------------------------------ */
+  #pk-section {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  #pk-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .pk-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px;
+  }
+  .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-row .btn { padding: 3px 8px; font-size: 11px; }
+
   #auth-form, #code-form { display: flex; gap: 8px; }
   #auth-form input, #code-form input {
     background: var(--surface);
@@ -381,33 +447,9 @@ export const HTML = `<!DOCTYPE html>
   }
   #users-list li .fp { margin-left: 6px; margin-right: 0; float: right; }
 
-  /* --- Links + embeds ---------------------------------------------------- */
+  /* --- Links ------------------------------------------------------------- */
   .msg .link { color: var(--accent); text-decoration: underline; }
   .msg .link:hover { text-decoration: none; }
-  .msg .embeds {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 4px 0 2px;
-  }
-  .embed-img, .embed-video {
-    max-width: min(360px, 100%);
-    max-height: 260px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    display: block;
-    background: var(--bg);
-    cursor: zoom-in;
-  }
-  .embed-video { cursor: default; }
-  .embed-audio { width: min(360px, 100%); }
-  .embed-yt {
-    width: min(400px, 100%);
-    aspect-ratio: 16 / 9;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #000;
-  }
 
   /* --- Mentions ---------------------------------------------------------- */
   .mention { color: var(--accent); font-weight: 600; }
@@ -468,8 +510,19 @@ export const HTML = `<!DOCTYPE html>
 <!-- Auth screen -->
 <div id="auth-screen">
   <h1>Shoutbox</h1>
-  <p id="auth-intro">Sign in with your email to join the chat. No password needed.</p>
-  <form id="auth-form">
+  <p id="auth-intro">Sign in with a passkey — no email, no password.</p>
+
+  <div id="auth-primary">
+    <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
+    <button class="btn" id="pk-signup-btn">Create account</button>
+  </div>
+
+  <form id="signup-form" style="display:none;">
+    <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="off">
+    <button type="submit" class="btn btn-primary">Create passkey</button>
+  </form>
+
+  <form id="auth-form" style="display:none;">
     <input type="email" id="email-input" placeholder="you@example.com" required autocomplete="email">
     <button type="submit" class="btn btn-primary">Continue</button>
   </form>
@@ -477,9 +530,35 @@ export const HTML = `<!DOCTYPE html>
     <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
     <button type="submit" class="btn btn-primary">Sign in</button>
   </form>
+
+  <form id="recovery-form" style="display:none;">
+    <input type="text" id="recovery-user" placeholder="username" maxlength="20" autocomplete="username" required>
+    <input type="text" id="recovery-code" placeholder="XXXXX-XXXXX" maxlength="11" autocomplete="off" required>
+    <button type="submit" class="btn btn-primary">Sign in</button>
+  </form>
+
   <div id="auth-status"></div>
   <div id="dev-link"></div>
-  <a href="#" id="auth-back" style="display:none; color: var(--text-muted); font-size: 12px;">Use a different email</a>
+  <div id="auth-alts">
+    <a href="#" id="use-email">Use email instead</a>
+    <span>·</span>
+    <a href="#" id="use-recovery">Use recovery code</a>
+    <span>·</span>
+    <a href="#" id="auth-back" style="display:none;">Back</a>
+  </div>
+</div>
+
+<!-- Recovery codes modal (shown after passkey signup) -->
+<div id="rc-modal">
+  <div id="rc-box">
+    <h3>Save your recovery codes</h3>
+    <p>If you lose every device with your passkey, these one-time codes are the only way back in. Save them somewhere safe now — they won't be shown again.</p>
+    <pre id="rc-codes"></pre>
+    <div class="actions">
+      <button class="btn" id="rc-copy">Copy</button>
+      <button class="btn btn-primary" id="rc-continue">I saved them</button>
+    </div>
+  </div>
 </div>
 
 <!-- Chat screen (hidden until authed) -->
@@ -570,6 +649,11 @@ export const HTML = `<!DOCTYPE html>
       <input type="checkbox" id="notify-toggle">
       Play sound when mentioned (@username)
     </label>
+    <div id="pk-section">
+      <h4>Passkeys</h4>
+      <div id="pk-list"></div>
+      <button class="btn" id="pk-add-btn" type="button">Add a passkey to this device</button>
+    </div>
     <div class="actions">
       <button class="btn btn-danger" id="profile-delete">Delete account</button>
       <span class="spacer"></span>
@@ -584,6 +668,20 @@ export const HTML = `<!DOCTYPE html>
   // --- Elements ---
   const authScreen  = document.getElementById('auth-screen');
   const chatScreen  = document.getElementById('chat-screen');
+  const authPrimary = document.getElementById('auth-primary');
+  const signupForm  = document.getElementById('signup-form');
+  const signupName  = document.getElementById('signup-name');
+  const pkSigninBtn = document.getElementById('pk-signin-btn');
+  const pkSignupBtn = document.getElementById('pk-signup-btn');
+  const useEmail    = document.getElementById('use-email');
+  const useRecovery = document.getElementById('use-recovery');
+  const recoveryForm = document.getElementById('recovery-form');
+  const recoveryUser = document.getElementById('recovery-user');
+  const recoveryCode = document.getElementById('recovery-code');
+  const rcModal     = document.getElementById('rc-modal');
+  const rcCodes     = document.getElementById('rc-codes');
+  const rcCopy      = document.getElementById('rc-copy');
+  const rcContinue  = document.getElementById('rc-continue');
   const authForm    = document.getElementById('auth-form');
   const emailInput  = document.getElementById('email-input');
   const codeForm    = document.getElementById('code-form');
@@ -591,6 +689,9 @@ export const HTML = `<!DOCTYPE html>
   const authBack    = document.getElementById('auth-back');
   const authStatus  = document.getElementById('auth-status');
   const devLink     = document.getElementById('dev-link');
+  const pkSection   = document.getElementById('pk-section');
+  const pkList      = document.getElementById('pk-list');
+  const pkAddBtn    = document.getElementById('pk-add-btn');
   let pendingEmail  = '';
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
@@ -615,6 +716,7 @@ export const HTML = `<!DOCTYPE html>
   let ws = null;
   let myUsername = '';
   let myColor = '';
+  let isAuthed = false;
   let reconnectTimer = null;
   let reconnectDelay = 1000;
   let notifyOn = localStorage.getItem('notify') !== 'off';
@@ -730,49 +832,23 @@ export const HTML = `<!DOCTYPE html>
     } catch {}
   }
 
-  function youtubeId(url) {
-    try {
-      const u = new URL(url);
-      if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('/')[0] || null;
-      if (/(^|\\.)youtube\\.com$/.test(u.hostname)) {
-        if (u.pathname === '/watch') return u.searchParams.get('v');
-        if (u.pathname.startsWith('/shorts/')) return u.pathname.split('/')[2] || null;
-        if (u.pathname.startsWith('/embed/'))  return u.pathname.split('/')[2] || null;
-      }
-    } catch {}
-    return null;
-  }
-
-  function classifyUrl(url) {
-    const yt = youtubeId(url);
-    if (yt && /^[a-zA-Z0-9_-]{6,20}$/.test(yt)) return { kind: 'youtube', id: yt };
-    if (/\\.(png|jpe?g|gif|webp|svg|avif)(\\?|#|$)/i.test(url)) return { kind: 'img', url };
-    if (/\\.(mp4|webm|mov|m4v)(\\?|#|$)/i.test(url)) return { kind: 'video', url };
-    if (/\\.(mp3|ogg|wav|m4a|flac)(\\?|#|$)/i.test(url)) return { kind: 'audio', url };
-    return null;
-  }
-
   function renderMessageText(parent, text) {
     const re = /(https?:\\/\\/[^\\s<>"'()]+[^\\s<>"'().,!?;:])|@([a-zA-Z0-9_\\-]{1,20})/g;
     let last = 0;
     let mentionedMe = false;
-    const media = [];
     let m;
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) {
         parent.appendChild(document.createTextNode(text.slice(last, m.index)));
       }
       if (m[1]) {
-        const url = m[1];
         const a = document.createElement('a');
-        a.href = url;
-        a.textContent = url;
+        a.href = m[1];
+        a.textContent = m[1];
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.className = 'link';
         parent.appendChild(a);
-        const c = classifyUrl(url);
-        if (c) media.push(c);
       } else {
         const span = document.createElement('span');
         span.className = 'mention';
@@ -787,54 +863,7 @@ export const HTML = `<!DOCTYPE html>
     if (last < text.length) {
       parent.appendChild(document.createTextNode(text.slice(last)));
     }
-    return { mentionedMe, media };
-  }
-
-  function renderEmbeds(parent, media) {
-    if (!media.length) return;
-    const wrap = document.createElement('div');
-    wrap.className = 'embeds';
-    const maybeScroll = () => {
-      const nearBottom =
-        messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 120;
-      if (nearBottom) scrollBottom();
-    };
-    for (const item of media) {
-      if (item.kind === 'img') {
-        const img = document.createElement('img');
-        img.className = 'embed-img';
-        img.loading = 'lazy';
-        img.referrerPolicy = 'no-referrer';
-        img.src = item.url;
-        img.addEventListener('load', maybeScroll);
-        img.addEventListener('click', () => window.open(item.url, '_blank', 'noopener,noreferrer'));
-        wrap.appendChild(img);
-      } else if (item.kind === 'video') {
-        const v = document.createElement('video');
-        v.className = 'embed-video';
-        v.src = item.url;
-        v.controls = true;
-        v.preload = 'metadata';
-        v.addEventListener('loadedmetadata', maybeScroll);
-        wrap.appendChild(v);
-      } else if (item.kind === 'audio') {
-        const a = document.createElement('audio');
-        a.className = 'embed-audio';
-        a.src = item.url;
-        a.controls = true;
-        a.preload = 'metadata';
-        wrap.appendChild(a);
-      } else if (item.kind === 'youtube') {
-        const f = document.createElement('iframe');
-        f.className = 'embed-yt';
-        f.src = 'https://www.youtube-nocookie.com/embed/' + item.id;
-        f.allow = 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-        f.allowFullscreen = true;
-        f.loading = 'lazy';
-        wrap.appendChild(f);
-      }
-    }
-    parent.appendChild(wrap);
+    return mentionedMe;
   }
 
   // --- Auth check ---
@@ -852,16 +881,226 @@ export const HTML = `<!DOCTYPE html>
     showAuth();
   }
 
+  function resetConnectionState() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectDelay = 1000;
+    const socket = ws;
+    ws = null;
+    if (socket) {
+      try { socket.close(); } catch {}
+    }
+    connStatus.classList.remove('show');
+  }
+
   function showAuth() {
+    isAuthed = false;
+    resetConnectionState();
     authScreen.style.display = '';
     chatScreen.style.display = 'none';
   }
 
   function showChat() {
+    isAuthed = true;
+    resetConnectionState();
     authScreen.style.display = 'none';
     chatScreen.style.display = 'flex';
     connectWS();
   }
+
+  // --- Passkey helpers ---
+  function b64urlToBuf(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr.buffer;
+  }
+  function bufToB64url(buf) {
+    const arr = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+  }
+
+  function prepCreate(opts) {
+    opts.challenge = b64urlToBuf(opts.challenge);
+    opts.user.id = b64urlToBuf(opts.user.id);
+    if (opts.excludeCredentials) {
+      opts.excludeCredentials = opts.excludeCredentials.map((c) => ({ ...c, id: b64urlToBuf(c.id) }));
+    }
+    return opts;
+  }
+  function prepGet(opts) {
+    opts.challenge = b64urlToBuf(opts.challenge);
+    if (opts.allowCredentials) {
+      opts.allowCredentials = opts.allowCredentials.map((c) => ({ ...c, id: b64urlToBuf(c.id) }));
+    }
+    return opts;
+  }
+
+  async function passkeyCreate(opts) {
+    const cred = await navigator.credentials.create({ publicKey: prepCreate(opts) });
+    return {
+      id: cred.id,
+      rawId: bufToB64url(cred.rawId),
+      type: cred.type,
+      response: {
+        attestationObject: bufToB64url(cred.response.attestationObject),
+        clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+        transports: cred.response.getTransports ? cred.response.getTransports() : [],
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+  }
+
+  async function passkeyGet(opts) {
+    const cred = await navigator.credentials.get({ publicKey: prepGet(opts) });
+    return {
+      id: cred.id,
+      rawId: bufToB64url(cred.rawId),
+      type: cred.type,
+      response: {
+        authenticatorData: bufToB64url(cred.response.authenticatorData),
+        clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+        signature: bufToB64url(cred.response.signature),
+        userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null,
+      },
+      clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+  }
+
+  function showAuthForm(which) {
+    authPrimary.style.display = which === 'primary' ? 'flex' : 'none';
+    signupForm.style.display = which === 'signup' ? 'flex' : 'none';
+    authForm.style.display = which === 'email' ? 'flex' : 'none';
+    codeForm.style.display = which === 'code' ? 'flex' : 'none';
+    recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
+    authBack.style.display = which === 'primary' ? 'none' : 'inline';
+  }
+
+  async function doPasskeySignin() {
+    if (!window.PublicKeyCredential) {
+      authStatus.textContent = 'Passkeys not supported on this browser';
+      return;
+    }
+    authStatus.textContent = 'Waiting for passkey...';
+    try {
+      const startRes = await fetch('/auth/webauthn/auth/start', { method: 'POST' });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.error || 'Failed to start');
+      const assertion = await passkeyGet(startData.options);
+      const finRes = await fetch('/auth/webauthn/auth/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: assertion }),
+      });
+      const finData = await finRes.json();
+      if (!finRes.ok) throw new Error(finData.error || 'Sign-in failed');
+      authStatus.textContent = '';
+      checkAuth();
+    } catch (e) {
+      authStatus.textContent = (e && e.message) || 'Cancelled';
+    }
+  }
+
+  async function doPasskeySignup(displayName) {
+    if (!window.PublicKeyCredential) {
+      authStatus.textContent = 'Passkeys not supported on this browser';
+      return;
+    }
+    authStatus.textContent = 'Creating passkey...';
+    try {
+      const startRes = await fetch('/auth/webauthn/register/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName }),
+      });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.error || 'Failed to start');
+      const attestation = await passkeyCreate(startData.options);
+      const finRes = await fetch('/auth/webauthn/register/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: attestation }),
+      });
+      const finData = await finRes.json();
+      if (!finRes.ok) throw new Error(finData.error || 'Registration failed');
+      authStatus.textContent = '';
+      if (finData.recoveryCodes && finData.recoveryCodes.length) {
+        rcCodes.textContent = finData.recoveryCodes.join('\\n');
+        rcModal.classList.add('open');
+      } else {
+        checkAuth();
+      }
+    } catch (e) {
+      authStatus.textContent = (e && e.message) || 'Cancelled';
+    }
+  }
+
+  pkSigninBtn.addEventListener('click', doPasskeySignin);
+  pkSignupBtn.addEventListener('click', () => {
+    showAuthForm('signup');
+    authStatus.textContent = '';
+    signupName.focus();
+  });
+  signupForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const n = signupName.value.trim();
+    if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(n)) {
+      authStatus.textContent = 'Username: 1-20 chars, letters/numbers/_/-';
+      return;
+    }
+    doPasskeySignup(n);
+  });
+  useEmail.addEventListener('click', (e) => {
+    e.preventDefault();
+    showAuthForm('email');
+    authStatus.textContent = '';
+    emailInput.focus();
+  });
+  useRecovery.addEventListener('click', (e) => {
+    e.preventDefault();
+    showAuthForm('recovery');
+    authStatus.textContent = '';
+    recoveryUser.focus();
+  });
+  recoveryForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const uname = recoveryUser.value.trim();
+    const code = recoveryCode.value.trim().toUpperCase();
+    if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(uname) || !/^[A-HJ-NP-Z2-9]{5}-?[A-HJ-NP-Z2-9]{5}$/.test(code)) {
+      authStatus.textContent = 'Invalid username or code';
+      return;
+    }
+    authStatus.textContent = 'Verifying...';
+    try {
+      const res = await fetch('/auth/recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: uname, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      authStatus.textContent = '';
+      checkAuth();
+    } catch (err) {
+      authStatus.textContent = (err && err.message) || 'Failed';
+    }
+  });
+
+  rcCopy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(rcCodes.textContent); rcCopy.textContent = 'Copied'; }
+    catch { rcCopy.textContent = 'Copy failed'; }
+    setTimeout(() => { rcCopy.textContent = 'Copy'; }, 2000);
+  });
+  rcContinue.addEventListener('click', () => {
+    rcModal.classList.remove('open');
+    checkAuth();
+  });
 
   // --- Auth form ---
   authForm.addEventListener('submit', async (e) => {
@@ -944,16 +1183,19 @@ export const HTML = `<!DOCTYPE html>
 
   // --- WebSocket ---
   function connectWS() {
-    if (ws) { try { ws.close(); } catch {} }
+    if (!isAuthed || ws) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host + '/ws');
+    const socket = new WebSocket(proto + '//' + location.host + '/ws');
+    ws = socket;
 
-    ws.addEventListener('open', () => {
+    socket.addEventListener('open', () => {
+      if (ws !== socket || !isAuthed) return;
       connStatus.classList.remove('show');
       reconnectDelay = 1000;
     });
 
-    ws.addEventListener('message', (e) => {
+    socket.addEventListener('message', (e) => {
+      if (ws !== socket) return;
       const data = JSON.parse(e.data);
 
       if (data.type === 'history') {
@@ -975,20 +1217,25 @@ export const HTML = `<!DOCTYPE html>
       }
     });
 
-    ws.addEventListener('close', () => {
+    socket.addEventListener('close', () => {
+      if (ws !== socket) return;
+      ws = null;
+      if (!isAuthed) return;
       connStatus.classList.add('show');
       scheduleReconnect();
     });
 
-    ws.addEventListener('error', () => {
+    socket.addEventListener('error', () => {
+      if (ws !== socket || !isAuthed) return;
       connStatus.classList.add('show');
     });
   }
 
   function scheduleReconnect() {
-    if (reconnectTimer) return;
+    if (!isAuthed || reconnectTimer) return;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
+      if (!isAuthed) return;
       reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
       connectWS();
     }, reconnectDelay);
@@ -1013,7 +1260,7 @@ export const HTML = `<!DOCTYPE html>
 
     const text = document.createElement('span');
     text.className = 'text';
-    const { mentionedMe, media } = renderMessageText(text, m.text);
+    const mentionedMe = renderMessageText(text, m.text);
 
     if (mentionedMe && m.username !== myUsername) {
       div.classList.add('mentioned');
@@ -1023,7 +1270,6 @@ export const HTML = `<!DOCTYPE html>
     div.appendChild(ts);
     div.appendChild(name);
     div.appendChild(text);
-    renderEmbeds(div, media);
     messagesDiv.appendChild(div);
 
     // Keep DOM limited
@@ -1120,7 +1366,6 @@ export const HTML = `<!DOCTYPE html>
       alert('Network error');
       return;
     }
-    if (ws) { try { ws.close(); } catch {} }
     profileModal.classList.remove('open');
     myUsername = '';
     myColor = '';
@@ -1185,7 +1430,6 @@ export const HTML = `<!DOCTYPE html>
   // --- Logout ---
   logoutBtn.addEventListener('click', async () => {
     await fetch('/auth/logout', { method: 'POST' });
-    if (ws) ws.close();
     showAuth();
   });
 

@@ -22,6 +22,31 @@ export class ChatRoom {
     await this.initialized;
 
     const url = new URL(request.url);
+    if (url.pathname === '/admin/update-user' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const fp = body.fingerprint || '';
+      if (!fp) return new Response('missing fingerprint', { status: 400 });
+
+      let changed = false;
+      for (const ws of this.state.getWebSockets()) {
+        const a = ws.deserializeAttachment() || {};
+        if (a.fingerprint !== fp) continue;
+
+        if (typeof body.username === 'string' && /^[a-zA-Z0-9_\-]{1,20}$/.test(body.username)) {
+          a.username = body.username;
+          changed = true;
+        }
+        if (typeof body.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(body.color)) {
+          a.color = body.color;
+          changed = true;
+        }
+        ws.serializeAttachment(a);
+      }
+
+      if (changed) this.broadcastOnline();
+      return new Response('ok');
+    }
+
     if (url.pathname === '/admin/delete-user' && request.method === 'POST') {
       const fp = request.headers.get('X-Chat-Fingerprint') || '';
       if (!fp) return new Response('missing fingerprint', { status: 400 });
