@@ -100,6 +100,42 @@ async function deleteAllSessions(env, email) {
   await env.KV.delete(key);
 }
 
+async function deleteOtherSessions(env, email, keepSid) {
+  const key = `usessions:${email}`;
+  const cur = await env.KV.get(key);
+  if (!cur) return 0;
+  const list = JSON.parse(cur);
+  const others = list.filter((sid) => sid !== keepSid);
+  await Promise.all(others.map((sid) => env.KV.delete(`session:${sid}`)));
+  const next = list.includes(keepSid) ? [keepSid] : [];
+  if (next.length === 0) await env.KV.delete(key);
+  else await env.KV.put(key, JSON.stringify(next));
+  return others.length;
+}
+
+// Sliding-window rate limit keyed by an arbitrary KV key.
+// Uses a 1-hour TTL and a linear counter + first-attempt timestamp.
+async function rateLimit(env, key, max, windowSec) {
+  const now = Date.now();
+  const raw = await env.KV.get(key);
+  let record = raw ? JSON.parse(raw) : { count: 0, windowStart: now };
+  if (now - record.windowStart > windowSec * 1000) {
+    record = { count: 0, windowStart: now };
+  }
+  record.count += 1;
+  const ok = record.count <= max;
+  await env.KV.put(key, JSON.stringify(record), { expirationTtl: windowSec + 60 });
+  return { ok, retryAfterSec: ok ? 0 : Math.ceil((record.windowStart + windowSec * 1000 - now) / 1000) };
+}
+
+async function hashIpForRateLimit(ip, secret) {
+  if (!ip) return 'anon';
+  // Rotate daily so the hash isn't a long-term identifier.
+  const day = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+  const h = await hmac(secret, `rl:${day}:${ip}`);
+  return h.slice(0, 16);
+}
+
 function authMode(ua) {
   if (!ua) return 'link';
   if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return 'code';
@@ -408,6 +444,12 @@ async function handleRequest(request, env) {
         return json({ error: 'Invalid email' }, 400);
       }
 
+      // Prevent mailbombing a target: 5 sends per hour per email address.
+      const rl = await rateLimit(env, `send_rate:${email}`, 5, 60 * 60);
+      if (!rl.ok) {
+        return json({ error: `Too many requests - try again in ${Math.ceil(rl.retryAfterSec / 60)} min` }, 429);
+      }
+
       const mode = authMode(request.headers.get('User-Agent') || '');
 
       if (mode === 'code') {
@@ -597,6 +639,12 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname === '/auth/webauthn/auth/start' && request.method === 'POST') {
+      // 30 challenge creations per hour per client; hash rotates daily so this
+      // isn't a long-term identifier.
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const rl = await rateLimit(env, `webauthn_rl:${ipHash}`, 30, 60 * 60);
+      if (!rl.ok) return json({ error: 'Too many requests' }, 429);
+
       const rpID = url.hostname;
       const options = await generateAuthenticationOptions({
         rpID,
@@ -692,6 +740,15 @@ async function handleRequest(request, env) {
       await env.KV.delete(`credential:${credId}`);
       await removeCredentialId(env, cred.ownerId, credId);
       return json({ ok: true });
+    }
+
+    if (url.pathname === '/auth/sessions/revoke-others' && request.method === 'POST') {
+      const sid = getCookie(request, 'sid');
+      if (!sid) return json({ error: 'Not signed in' }, 401);
+      const synced = await syncSessionWithProfile(env, sid, secret);
+      if (!synced) return json({ error: 'Not signed in' }, 401);
+      const revoked = await deleteOtherSessions(env, synced.session.email, sid);
+      return json({ ok: true, revoked });
     }
 
     if (url.pathname === '/auth/recovery' && request.method === 'POST') {
@@ -972,7 +1029,23 @@ async function handleRequest(request, env) {
     // ---- Serve the SPA -----------------------------------------------------
     if (url.pathname === '/' || url.pathname === '/index.html') {
       return new Response(HTML, {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data:",
+            "connect-src 'self'",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+          ].join('; '),
+          'X-Frame-Options': 'DENY',
+          'X-Content-Type-Options': 'nosniff',
+          'Referrer-Policy': 'no-referrer',
+          'Permissions-Policy': 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()',
+        },
       });
     }
 

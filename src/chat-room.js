@@ -6,6 +6,13 @@
 
 const MAX_MESSAGES = 100;
 
+// Rate limiting per-socket: at most MSG_BURST messages within MSG_WINDOW_MS.
+// Exceeding the burst drops the message and sends a soft warning; sustained
+// spamming (KICK_STRIKES warnings) closes the socket.
+const MSG_BURST = 5;
+const MSG_WINDOW_MS = 3000;
+const KICK_STRIKES = 3;
+
 export class ChatRoom {
   constructor(state) {
     this.state = state;
@@ -101,12 +108,28 @@ export class ChatRoom {
       const text = data.text.trim().slice(0, 500);
       if (!text) return;
 
+      const now = Date.now();
+      const history = (attachment.sendHistory || []).filter((t) => now - t < MSG_WINDOW_MS);
+      if (history.length >= MSG_BURST) {
+        attachment.strikes = (attachment.strikes || 0) + 1;
+        ws.serializeAttachment(attachment);
+        try { ws.send(JSON.stringify({ type: 'rate_limit', retryMs: MSG_WINDOW_MS })); } catch {}
+        if (attachment.strikes >= KICK_STRIKES) {
+          try { ws.close(1008, 'rate limit'); } catch {}
+        }
+        return;
+      }
+      history.push(now);
+      attachment.sendHistory = history;
+      attachment.strikes = 0;
+      ws.serializeAttachment(attachment);
+
       const msg = {
         username: attachment.username,
         color: attachment.color,
         fingerprint: attachment.fingerprint || '',
         text,
-        ts: Date.now(),
+        ts: now,
       };
 
       this.messages.push(msg);

@@ -146,7 +146,7 @@ export const HTML = `<!DOCTYPE html>
   #messages {
     flex: 1;
     overflow-y: auto;
-    padding: 8px 12px;
+    padding: 8px 12px 8px 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -155,7 +155,8 @@ export const HTML = `<!DOCTYPE html>
   .msg {
     font-size: 13px;
     line-height: 1.45;
-    padding: 2px 0;
+    padding: 2px 0 2px 6px;
+    border-left: 2px solid transparent;
     min-width: 0;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -466,8 +467,7 @@ export const HTML = `<!DOCTYPE html>
   .mention { color: var(--accent); font-weight: 600; }
   .msg.mentioned {
     background: rgba(91,141,239,.12);
-    border-left: 2px solid var(--accent);
-    padding: 2px 0 2px 6px;
+    border-left-color: var(--accent);
   }
 
   /* --- Profile toggle row ------------------------------------------------ */
@@ -529,7 +529,7 @@ export const HTML = `<!DOCTYPE html>
   </div>
 
   <form id="signup-form" style="display:none;">
-    <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="off">
+    <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
     <button type="submit" class="btn btn-primary">Create passkey</button>
   </form>
 
@@ -671,6 +671,7 @@ export const HTML = `<!DOCTYPE html>
       <div id="pk-list"></div>
       <button class="btn" id="pk-add-btn" type="button">Add a passkey to this device</button>
       <button class="btn" id="rc-regen-btn" type="button">Regenerate recovery codes</button>
+      <button class="btn" id="revoke-others-btn" type="button">Sign out everywhere else</button>
     </div>
     <div class="actions">
       <button class="btn btn-danger" id="profile-delete">Delete account</button>
@@ -715,6 +716,7 @@ export const HTML = `<!DOCTYPE html>
   const pkList      = document.getElementById('pk-list');
   const pkAddBtn    = document.getElementById('pk-add-btn');
   const rcRegenBtn  = document.getElementById('rc-regen-btn');
+  const revokeOthersBtn = document.getElementById('revoke-others-btn');
   let pendingEmail  = '';
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
@@ -1251,6 +1253,11 @@ export const HTML = `<!DOCTYPE html>
         setOnlineUsers(users);
         renderUsers(users);
       }
+
+      if (data.type === 'rate_limit') {
+        msgInput.placeholder = 'Slow down...';
+        setTimeout(() => { msgInput.placeholder = 'Type a message...'; }, data.retryMs || 3000);
+      }
     });
 
     socket.addEventListener('close', () => {
@@ -1410,6 +1417,24 @@ export const HTML = `<!DOCTYPE html>
       }
     } catch {}
   }
+
+  revokeOthersBtn.addEventListener('click', async () => {
+    if (!confirm('Sign out every other device? You will stay signed in here.')) return;
+    revokeOthersBtn.disabled = true;
+    const prev = revokeOthersBtn.textContent;
+    revokeOthersBtn.textContent = 'Signing out...';
+    try {
+      const res = await fetch('/auth/sessions/revoke-others', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      revokeOthersBtn.textContent = data.revoked ? 'Signed out ' + data.revoked + ' other session(s)' : 'No other sessions';
+      setTimeout(() => { revokeOthersBtn.textContent = prev; revokeOthersBtn.disabled = false; }, 2500);
+    } catch (e) {
+      alert((e && e.message) || 'Failed');
+      revokeOthersBtn.textContent = prev;
+      revokeOthersBtn.disabled = false;
+    }
+  });
 
   rcRegenBtn.addEventListener('click', async () => {
     if (!confirm('Regenerate your recovery codes? All previous codes will stop working. This takes a few seconds.')) return;
@@ -1591,8 +1616,7 @@ export const HTML = `<!DOCTYPE html>
     vmRepoLink.href = repo;
     vmRecipe.textContent = [
       'gh release download build-' + short + ' --repo ' + slug,
-      'gh attestation verify index.js       --owner ' + owner,
-      'gh attestation verify live-script.js --owner ' + owner,
+      'gh attestation verify index.js --owner ' + owner,
     ].join(String.fromCharCode(10));
     verifyModal.classList.add('open');
   });
