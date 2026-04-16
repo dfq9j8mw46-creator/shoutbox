@@ -333,6 +333,41 @@ export const HTML = `<!DOCTYPE html>
   }
   #verify-box .actions { display: flex; justify-content: flex-end; }
 
+  /* --- User fingerprint + clickable names + profile modal --------------- */
+  .clickable-name { cursor: pointer; }
+  .clickable-name:hover { text-decoration: underline; }
+  .fp {
+    color: var(--text-muted);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10px;
+    margin-right: 6px;
+    user-select: all;
+  }
+  #users-list li .fp { margin-left: 6px; margin-right: 0; float: right; }
+  #user-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  #user-modal.open { display: flex; }
+  #user-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    width: 320px;
+    max-width: calc(100vw - 32px);
+    display: flex; flex-direction: column; gap: 10px;
+    font-size: 13px;
+  }
+  #user-box h3 { font-size: 17px; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 8px; }
+  #user-box h3 .fp { font-size: 11px; }
+  #user-box dl { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; margin: 0; }
+  #user-box dt { color: var(--text-muted); }
+  #user-box dd { margin: 0; }
+  #user-box .actions { display: flex; justify-content: flex-end; }
+
   /* --- Connection status ------------------------------------------------- */
   #conn-status {
     font-size: 11px;
@@ -412,6 +447,22 @@ export const HTML = `<!DOCTYPE html>
     <p>CI also fetches the deployed bundle from Cloudflare after each deploy and fails the run if its hash differs from the signed bundle.</p>
     <div class="actions">
       <button class="btn" id="verify-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- User info modal -->
+<div id="user-modal">
+  <div id="user-box">
+    <h3>
+      <span id="um-name"></span>
+      <span id="um-fp" class="fp"></span>
+    </h3>
+    <dl>
+      <dt>Joined</dt><dd id="um-joined"></dd>
+    </dl>
+    <div class="actions">
+      <button class="btn" id="user-close">Close</button>
     </div>
   </div>
 </div>
@@ -586,9 +637,14 @@ export const HTML = `<!DOCTYPE html>
     ts.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const name = document.createElement('span');
-    name.className = 'name';
+    name.className = 'name clickable-name';
     name.style.color = m.color;
     name.textContent = m.username;
+    name.dataset.username = m.username;
+
+    const fp = document.createElement('span');
+    fp.className = 'fp';
+    fp.textContent = m.fingerprint ? '#' + m.fingerprint : '';
 
     const text = document.createElement('span');
     text.className = 'text';
@@ -596,6 +652,7 @@ export const HTML = `<!DOCTYPE html>
 
     div.appendChild(ts);
     div.appendChild(name);
+    if (m.fingerprint) div.appendChild(fp);
     div.appendChild(text);
     messagesDiv.appendChild(div);
 
@@ -750,14 +807,62 @@ export const HTML = `<!DOCTYPE html>
     if (e.target === verifyModal) verifyModal.classList.remove('open');
   });
 
+  // --- User info modal ---
+  const userModal = document.getElementById('user-modal');
+  const umName    = document.getElementById('um-name');
+  const umFp      = document.getElementById('um-fp');
+  const umJoined  = document.getElementById('um-joined');
+  const userClose = document.getElementById('user-close');
+
+  async function showUser(username) {
+    umName.textContent = username;
+    umName.style.color = '';
+    umFp.textContent = '';
+    umJoined.textContent = 'Loading...';
+    userModal.classList.add('open');
+    try {
+      const res = await fetch('/user/' + encodeURIComponent(username));
+      if (!res.ok) { umJoined.textContent = 'Unknown user'; return; }
+      const u = await res.json();
+      umName.style.color = u.color || '';
+      umFp.textContent = u.fingerprint ? '#' + u.fingerprint : '';
+      if (u.created_at) {
+        const d = new Date(u.created_at);
+        umJoined.textContent = d.toLocaleString();
+      } else {
+        umJoined.textContent = '—';
+      }
+    } catch {
+      umJoined.textContent = 'Network error';
+    }
+  }
+  userClose.addEventListener('click', () => userModal.classList.remove('open'));
+  userModal.addEventListener('click', (e) => {
+    if (e.target === userModal) userModal.classList.remove('open');
+  });
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('.clickable-name');
+    if (el && el.dataset.username) showUser(el.dataset.username);
+  });
+
   // --- Online users panel ---
   function renderUsers(users) {
     usersList.innerHTML = '';
     const sorted = users.slice().sort((a, b) => a.username.localeCompare(b.username));
     for (const u of sorted) {
       const li = document.createElement('li');
-      li.style.color = u.color;
-      li.textContent = u.username;
+      const name = document.createElement('span');
+      name.className = 'clickable-name';
+      name.style.color = u.color;
+      name.textContent = u.username;
+      name.dataset.username = u.username;
+      li.appendChild(name);
+      if (u.fingerprint) {
+        const fp = document.createElement('span');
+        fp.className = 'fp';
+        fp.textContent = '#' + u.fingerprint;
+        li.appendChild(fp);
+      }
       usersList.appendChild(li);
     }
   }

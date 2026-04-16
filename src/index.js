@@ -64,13 +64,45 @@ async function defaultColor(email, secret) {
   return `hsl(${hue}, 70%, 45%)`;
 }
 
+async function fingerprint(secret, email) {
+  const h = await hmac(secret, 'fp:' + email.toLowerCase().trim());
+  return h.slice(0, 6);
+}
+
+async function reserveUsername(env, base, email) {
+  let name = base;
+  for (let i = 0; i < 50; i++) {
+    const owner = await env.KV.get(`username:${name}`);
+    if (!owner || owner === email) {
+      await env.KV.put(`username:${name}`, email);
+      return name;
+    }
+    name = base + (i + 2);
+  }
+  return base + Math.floor(Math.random() * 9999);
+}
+
 async function loadOrCreateProfile(env, email, secret) {
   const key = `profile:${email}`;
   const raw = await env.KV.get(key);
-  if (raw) return JSON.parse(raw);
+  if (raw) {
+    const p = JSON.parse(raw);
+    let dirty = false;
+    if (!p.fingerprint) { p.fingerprint = await fingerprint(secret, email); dirty = true; }
+    if (!p.created_at)  { p.created_at = new Date().toISOString(); dirty = true; }
+    if (p.username && !(await env.KV.get(`username:${p.username}`))) {
+      await env.KV.put(`username:${p.username}`, email);
+    }
+    if (dirty) await env.KV.put(key, JSON.stringify(p));
+    return p;
+  }
+  const base = await defaultUsername(email, secret);
+  const username = await reserveUsername(env, base, email);
   const profile = {
-    username: await defaultUsername(email, secret),
+    username,
     color: await defaultColor(email, secret),
+    fingerprint: await fingerprint(secret, email),
+    created_at: new Date().toISOString(),
   };
   await env.KV.put(key, JSON.stringify(profile));
   return profile;
@@ -149,7 +181,12 @@ export default {
       // Create session (load durable profile, or mint default on first login)
       const sid = crypto.randomUUID();
       const profile = await loadOrCreateProfile(env, email, secret);
-      const session = JSON.stringify({ email, username: profile.username, color: profile.color });
+      const session = JSON.stringify({
+        email,
+        username: profile.username,
+        color: profile.color,
+        fingerprint: profile.fingerprint,
+      });
       await env.KV.put(`session:${sid}`, session, { expirationTtl: 60 * 60 * 24 * 7 }); // 7 days
 
       return new Response(null, {
@@ -167,7 +204,27 @@ export default {
       const raw = await env.KV.get(`session:${sid}`);
       if (!raw) return json({ error: 'Not signed in' }, 401);
       const session = JSON.parse(raw);
-      return json({ username: session.username, color: session.color });
+      return json({
+        username: session.username,
+        color: session.color,
+        fingerprint: session.fingerprint,
+      });
+    }
+
+    if (url.pathname.startsWith('/user/') && request.method === 'GET') {
+      const name = decodeURIComponent(url.pathname.slice(6));
+      if (!USERNAME_RE.test(name)) return json({ error: 'Not found' }, 404);
+      const ownerEmail = await env.KV.get(`username:${name}`);
+      if (!ownerEmail) return json({ error: 'Not found' }, 404);
+      const praw = await env.KV.get(`profile:${ownerEmail}`);
+      if (!praw) return json({ error: 'Not found' }, 404);
+      const p = JSON.parse(praw);
+      return json({
+        username: p.username,
+        color: p.color,
+        fingerprint: p.fingerprint,
+        created_at: p.created_at,
+      });
     }
 
     if (url.pathname === '/auth/profile' && request.method === 'POST') {
@@ -183,7 +240,15 @@ export default {
         if (!USERNAME_RE.test(u)) {
           return json({ error: 'Username: 1-20 chars, letters/numbers/_/-' }, 400);
         }
-        session.username = u;
+        if (u !== session.username) {
+          const owner = await env.KV.get(`username:${u}`);
+          if (owner && owner !== session.email) {
+            return json({ error: 'Username taken' }, 409);
+          }
+          await env.KV.put(`username:${u}`, session.email);
+          if (session.username) await env.KV.delete(`username:${session.username}`);
+          session.username = u;
+        }
       }
       if (body.color !== undefined) {
         const c = (body.color || '').trim();
@@ -194,11 +259,22 @@ export default {
       }
 
       await env.KV.put(`session:${sid}`, JSON.stringify(session), { expirationTtl: 60 * 60 * 24 * 7 });
+      const existing = await env.KV.get(`profile:${session.email}`);
+      const prev = existing ? JSON.parse(existing) : {};
       await env.KV.put(
         `profile:${session.email}`,
-        JSON.stringify({ username: session.username, color: session.color }),
+        JSON.stringify({
+          username: session.username,
+          color: session.color,
+          fingerprint: session.fingerprint || prev.fingerprint || (await fingerprint(secret, session.email)),
+          created_at: prev.created_at || new Date().toISOString(),
+        }),
       );
-      return json({ username: session.username, color: session.color });
+      return json({
+        username: session.username,
+        color: session.color,
+        fingerprint: session.fingerprint,
+      });
     }
 
     if (url.pathname === '/auth/logout' && request.method === 'POST') {
@@ -222,6 +298,7 @@ export default {
       const newHeaders = new Headers(request.headers);
       newHeaders.set('X-Chat-Username', session.username);
       newHeaders.set('X-Chat-Color', session.color);
+      if (session.fingerprint) newHeaders.set('X-Chat-Fingerprint', session.fingerprint);
       const newReq = new Request(request.url, { headers: newHeaders, body: request.body, method: request.method });
 
       return room.fetch(newReq);

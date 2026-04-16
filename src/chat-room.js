@@ -28,12 +28,13 @@ export class ChatRoom {
 
     const username = request.headers.get('X-Chat-Username') || 'Anon';
     const color = request.headers.get('X-Chat-Color') || '#888888';
+    const fingerprint = request.headers.get('X-Chat-Fingerprint') || '';
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
     this.state.acceptWebSocket(server);
-    server.serializeAttachment({ username, color });
+    server.serializeAttachment({ username, color, fingerprint });
 
     // Send history to the new client
     server.send(JSON.stringify({ type: 'history', messages: this.messages }));
@@ -57,6 +58,7 @@ export class ChatRoom {
       const msg = {
         username: attachment.username,
         color: attachment.color,
+        fingerprint: attachment.fingerprint || '',
         text,
         ts: Date.now(),
       };
@@ -117,7 +119,11 @@ export class ChatRoom {
     const sockets = this.state.getWebSockets();
     const users = sockets.map((ws) => {
       const a = ws.deserializeAttachment() || {};
-      return { username: a.username || 'Anon', color: a.color || '#888888' };
+      return {
+        username: a.username || 'Anon',
+        color: a.color || '#888888',
+        fingerprint: a.fingerprint || '',
+      };
     });
     this.broadcast({ type: 'online', count: sockets.length, users });
   }
