@@ -533,7 +533,7 @@ export const HTML = `<!DOCTYPE html>
 
   <form id="recovery-form" style="display:none;">
     <input type="text" id="recovery-user" placeholder="username" maxlength="20" autocomplete="username" required>
-    <input type="text" id="recovery-code" placeholder="XXXXX-XXXXX" maxlength="11" autocomplete="off" required>
+    <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" required>
     <button type="submit" class="btn btn-primary">Sign in</button>
   </form>
 
@@ -653,6 +653,7 @@ export const HTML = `<!DOCTYPE html>
       <h4>Passkeys</h4>
       <div id="pk-list"></div>
       <button class="btn" id="pk-add-btn" type="button">Add a passkey to this device</button>
+      <button class="btn" id="rc-regen-btn" type="button">Regenerate recovery codes</button>
     </div>
     <div class="actions">
       <button class="btn btn-danger" id="profile-delete">Delete account</button>
@@ -692,6 +693,7 @@ export const HTML = `<!DOCTYPE html>
   const pkSection   = document.getElementById('pk-section');
   const pkList      = document.getElementById('pk-list');
   const pkAddBtn    = document.getElementById('pk-add-btn');
+  const rcRegenBtn  = document.getElementById('rc-regen-btn');
   let pendingEmail  = '';
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
@@ -1072,8 +1074,8 @@ export const HTML = `<!DOCTYPE html>
   recoveryForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const uname = recoveryUser.value.trim();
-    const code = recoveryCode.value.trim().toUpperCase();
-    if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(uname) || !/^[A-HJ-NP-Z2-9]{5}-?[A-HJ-NP-Z2-9]{5}$/.test(code)) {
+    const code = recoveryCode.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(uname) || !/^[A-HJ-NP-Z2-9]{12}$/.test(code)) {
       authStatus.textContent = 'Invalid username or code';
       return;
     }
@@ -1368,6 +1370,25 @@ export const HTML = `<!DOCTYPE html>
       }
     } catch {}
   }
+
+  rcRegenBtn.addEventListener('click', async () => {
+    if (!confirm('Regenerate your recovery codes? All previous codes will stop working. This takes a few seconds.')) return;
+    rcRegenBtn.disabled = true;
+    const prevLabel = rcRegenBtn.textContent;
+    rcRegenBtn.textContent = 'Generating…';
+    try {
+      const res = await fetch('/auth/recovery/regenerate', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      rcCodes.textContent = (data.recoveryCodes || []).join('\\n');
+      rcModal.classList.add('open');
+    } catch (e) {
+      alert((e && e.message) || 'Failed');
+    } finally {
+      rcRegenBtn.disabled = false;
+      rcRegenBtn.textContent = prevLabel;
+    }
+  });
 
   pkAddBtn.addEventListener('click', async () => {
     if (!window.PublicKeyCredential) { alert('Passkeys not supported on this browser'); return; }

@@ -269,18 +269,70 @@ function b64urlToBytes(s) {
   return arr;
 }
 
-async function sha256Hex(s) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const RECOVERY_KDF_ITERS = 210000; // OWASP 2023 guideline for PBKDF2-SHA256
+const RECOVERY_SALT_BYTES = 16;
+const RECOVERY_MAX_ATTEMPTS = 5;
+const RECOVERY_LOCK_SECONDS = 60 * 60; // 1h cooldown after repeated failures
+const RECOVERY_CODE_LEN = 12;
+const RECOVERY_CODES_PER_USER = 10;
+const RECOVERY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L
+const RECOVERY_VERSION = 2;
+const DUMMY_SALT = new Uint8Array(RECOVERY_SALT_BYTES); // all zeros, used to normalize timing
+
+async function pbkdf2(password, salt) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: RECOVERY_KDF_ITERS, hash: 'SHA-256' },
+    key,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+function constantTimeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 function generateRecoveryCode() {
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L
-  const bytes = new Uint8Array(10);
+  const bytes = new Uint8Array(RECOVERY_CODE_LEN);
   crypto.getRandomValues(bytes);
   let s = '';
-  for (let i = 0; i < 10; i++) s += alphabet[bytes[i] % alphabet.length];
-  return s.slice(0, 5) + '-' + s.slice(5, 10);
+  for (let i = 0; i < RECOVERY_CODE_LEN; i++) s += RECOVERY_ALPHABET[bytes[i] % RECOVERY_ALPHABET.length];
+  return s.slice(0, 4) + '-' + s.slice(4, 8) + '-' + s.slice(8, 12);
+}
+
+function normalizeRecoveryInput(raw) {
+  return (raw || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+async function createRecoveryCodes(env, ownerId) {
+  const plain = [];
+  const codes = [];
+  for (let i = 0; i < RECOVERY_CODES_PER_USER; i++) {
+    const code = generateRecoveryCode();
+    plain.push(code);
+    const salt = crypto.getRandomValues(new Uint8Array(RECOVERY_SALT_BYTES));
+    const hash = await pbkdf2(normalizeRecoveryInput(code), salt);
+    codes.push({
+      salt: b64urlFromBytes(salt),
+      hash: b64urlFromBytes(hash),
+      used: false,
+    });
+  }
+  await env.KV.put(
+    `recovery:${ownerId}`,
+    JSON.stringify({ version: RECOVERY_VERSION, codes, attempts: 0, lockedUntil: 0 }),
+  );
+  return plain;
 }
 
 async function listCredentialIds(env, ownerId) {
@@ -326,7 +378,7 @@ async function createPasskeyProfile(env, ownerId, username, secret) {
 // ---------------------------------------------------------------------------
 const USERNAME_RE = /^[a-zA-Z0-9_\-]{1,20}$/;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
-const RECOVERY_RE = /^[A-HJ-NP-Z2-9]{5}-?[A-HJ-NP-Z2-9]{5}$/i;
+const RECOVERY_RE = /^[A-HJ-NP-Z2-9]{12}$/;
 
 // ---------------------------------------------------------------------------
 // Main fetch handler
@@ -506,14 +558,7 @@ export default {
           return json({ error: 'Username taken' }, 409);
         }
         await createPasskeyProfile(env, ch.ownerId, ch.userName, secret);
-        recoveryCodes = [];
-        const records = [];
-        for (let i = 0; i < 10; i++) {
-          const code = generateRecoveryCode();
-          recoveryCodes.push(code);
-          records.push({ hash: await sha256Hex(code), used: false });
-        }
-        await env.KV.put(`recovery:${ch.ownerId}`, JSON.stringify(records));
+        recoveryCodes = await createRecoveryCodes(env, ch.ownerId);
       }
 
       await env.KV.put(
@@ -640,23 +685,75 @@ export default {
     if (url.pathname === '/auth/recovery' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const uname = (body.username || '').trim();
-      let code = (body.code || '').trim().toUpperCase().replace(/-/g, '');
-      if (!USERNAME_RE.test(uname) || !/^[A-HJ-NP-Z2-9]{10}$/.test(code)) {
-        return json({ error: 'Invalid input' }, 400);
+      const code = normalizeRecoveryInput(body.code);
+      if (!USERNAME_RE.test(uname) || !RECOVERY_RE.test(code)) {
+        return json({ error: 'Invalid' }, 400);
       }
+
       const ownerId = await env.KV.get(`username:${uname}`);
-      if (!ownerId) return json({ error: 'Invalid' }, 401);
-      const codesRaw = await env.KV.get(`recovery:${ownerId}`);
-      if (!codesRaw) return json({ error: 'No recovery codes' }, 401);
-      const codes = JSON.parse(codesRaw);
-      const codeFormatted = code.slice(0, 5) + '-' + code.slice(5, 10);
-      const hash = await sha256Hex(codeFormatted);
-      const entry = codes.find((c) => !c.used && c.hash === hash);
-      if (!entry) return json({ error: 'Invalid code' }, 401);
-      entry.used = true;
-      await env.KV.put(`recovery:${ownerId}`, JSON.stringify(codes));
+      const recRaw = ownerId ? await env.KV.get(`recovery:${ownerId}`) : null;
+      let rec = null;
+      if (recRaw) {
+        try {
+          const parsed = JSON.parse(recRaw);
+          // Only accept the new versioned format; legacy SHA-256 records are ignored.
+          if (parsed && parsed.version === RECOVERY_VERSION && Array.isArray(parsed.codes)) {
+            rec = parsed;
+          }
+        } catch {}
+      }
+
+      // Always run PBKDF2 once so response time doesn't leak whether the user exists
+      // or whether they have (valid) codes.
+      let matchedIndex = -1;
+      const now = Date.now();
+      const locked = rec && rec.lockedUntil && rec.lockedUntil > now;
+      const entries = rec && !locked ? rec.codes : [];
+
+      // Probe one entry at a time. Always do at least one PBKDF2 pass on a dummy
+      // salt if there's nothing to check.
+      let didKdf = false;
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        if (e.used || !e.salt || !e.hash) continue;
+        didKdf = true;
+        const derived = await pbkdf2(code, b64urlToBytes(e.salt));
+        const stored = b64urlToBytes(e.hash);
+        if (matchedIndex === -1 && constantTimeEqual(derived, stored)) {
+          matchedIndex = i;
+        }
+      }
+      if (!didKdf) {
+        await pbkdf2(code, DUMMY_SALT);
+      }
+
+      if (matchedIndex === -1) {
+        if (rec && !locked) {
+          rec.attempts = (rec.attempts || 0) + 1;
+          if (rec.attempts >= RECOVERY_MAX_ATTEMPTS) {
+            rec.lockedUntil = now + RECOVERY_LOCK_SECONDS * 1000;
+            rec.attempts = 0;
+          }
+          await env.KV.put(`recovery:${ownerId}`, JSON.stringify(rec));
+        }
+        return json({ error: 'Invalid' }, 401);
+      }
+
+      rec.codes[matchedIndex].used = true;
+      rec.attempts = 0;
+      rec.lockedUntil = 0;
+      await env.KV.put(`recovery:${ownerId}`, JSON.stringify(rec));
       const newSid = await createSession(env, ownerId, secret);
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', newSid, SESSION_TTL) });
+    }
+
+    if (url.pathname === '/auth/recovery/regenerate' && request.method === 'POST') {
+      const sid = getCookie(request, 'sid');
+      if (!sid) return json({ error: 'Not signed in' }, 401);
+      const synced = await syncSessionWithProfile(env, sid, secret);
+      if (!synced) return json({ error: 'Not signed in' }, 401);
+      const codes = await createRecoveryCodes(env, synced.session.email);
+      return json({ ok: true, recoveryCodes: codes });
     }
 
     if (url.pathname === '/auth/verify-code' && request.method === 'POST') {
