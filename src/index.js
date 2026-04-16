@@ -63,6 +63,18 @@ async function defaultColor(email, secret) {
   return `hsl(${hue}, 70%, 45%)`;
 }
 
+async function loadOrCreateProfile(env, email, secret) {
+  const key = `profile:${email}`;
+  const raw = await env.KV.get(key);
+  if (raw) return JSON.parse(raw);
+  const profile = {
+    username: await defaultUsername(email, secret),
+    color: await defaultColor(email, secret),
+  };
+  await env.KV.put(key, JSON.stringify(profile));
+  return profile;
+}
+
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
@@ -133,11 +145,10 @@ export default {
       }
       await env.KV.delete(`magic:${token}`);
 
-      // Create session
+      // Create session (load durable profile, or mint default on first login)
       const sid = crypto.randomUUID();
-      const username = await defaultUsername(email, secret);
-      const color = await defaultColor(email, secret);
-      const session = JSON.stringify({ email, username, color });
+      const profile = await loadOrCreateProfile(env, email, secret);
+      const session = JSON.stringify({ email, username: profile.username, color: profile.color });
       await env.KV.put(`session:${sid}`, session, { expirationTtl: 60 * 60 * 24 * 7 }); // 7 days
 
       return new Response(null, {
@@ -182,6 +193,10 @@ export default {
       }
 
       await env.KV.put(`session:${sid}`, JSON.stringify(session), { expirationTtl: 60 * 60 * 24 * 7 });
+      await env.KV.put(
+        `profile:${session.email}`,
+        JSON.stringify({ username: session.username, color: session.color }),
+      );
       return json({ username: session.username, color: session.color });
     }
 

@@ -9,16 +9,19 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ChatRoom"]
+new_sqlite_classes = ["ChatRoom"]
 
 [vars]
-BASE_URL = "http://localhost:8787"
+BASE_URL = "https://sb.rooty.org"
+
+[[routes]]
+pattern = "sb.rooty.org"
+custom_domain = true
 
 # KV namespace for sessions and magic tokens
 [[kv_namespaces]]
 binding = "KV"
-id = "YOUR_KV_NAMESPACE_ID"
-preview_id = "YOUR_KV_PREVIEW_NAMESPACE_ID"
+id = "64646894967d4cfc8c9df02392a35cc7"
 
 # Set these secrets with: wrangler secret put <NAME>
 # SECRET           - HMAC signing key
