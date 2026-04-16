@@ -614,7 +614,7 @@ export const HTML = `<!DOCTYPE html>
       const sha = versionInfo.commit || 'unknown';
       const short = sha === 'dev' ? 'dev' : sha.slice(0, 7);
       buildBadge.textContent = 'build ' + short;
-      buildBadge.style.display = '';
+      buildBadge.style.display = 'inline-block';
     } catch {}
   }
 
