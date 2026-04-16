@@ -269,7 +269,7 @@ function b64urlToBytes(s) {
   return arr;
 }
 
-const RECOVERY_KDF_ITERS = 210000; // OWASP 2023 guideline for PBKDF2-SHA256
+const RECOVERY_KDF_ITERS = 100000; // Workers WebCrypto caps PBKDF2 at 100k
 const RECOVERY_SALT_BYTES = 16;
 const RECOVERY_MAX_ATTEMPTS = 5;
 const RECOVERY_LOCK_SECONDS = 60 * 60; // 1h cooldown after repeated failures
