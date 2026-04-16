@@ -64,6 +64,34 @@ async function defaultColor(email, secret) {
   return `hsl(${hue}, 70%, 45%)`;
 }
 
+async function addSessionIndex(env, email, sid) {
+  const key = `usessions:${email}`;
+  const cur = await env.KV.get(key);
+  const list = cur ? JSON.parse(cur) : [];
+  if (!list.includes(sid)) {
+    list.push(sid);
+    await env.KV.put(key, JSON.stringify(list));
+  }
+}
+
+async function removeSessionIndex(env, email, sid) {
+  const key = `usessions:${email}`;
+  const cur = await env.KV.get(key);
+  if (!cur) return;
+  const list = JSON.parse(cur).filter((s) => s !== sid);
+  if (list.length === 0) await env.KV.delete(key);
+  else await env.KV.put(key, JSON.stringify(list));
+}
+
+async function deleteAllSessions(env, email) {
+  const key = `usessions:${email}`;
+  const cur = await env.KV.get(key);
+  if (!cur) return;
+  const list = JSON.parse(cur);
+  await Promise.all(list.map((sid) => env.KV.delete(`session:${sid}`)));
+  await env.KV.delete(key);
+}
+
 async function fingerprint(secret, email) {
   const h = await hmac(secret, 'fp:' + email.toLowerCase().trim());
   return h.slice(0, 6);
@@ -188,6 +216,7 @@ export default {
         fingerprint: profile.fingerprint,
       });
       await env.KV.put(`session:${sid}`, session, { expirationTtl: 60 * 60 * 24 * 7 }); // 7 days
+      await addSessionIndex(env, email, sid);
 
       return new Response(null, {
         status: 302,
@@ -279,7 +308,37 @@ export default {
 
     if (url.pathname === '/auth/logout' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
-      if (sid) await env.KV.delete(`session:${sid}`);
+      if (sid) {
+        const raw = await env.KV.get(`session:${sid}`);
+        await env.KV.delete(`session:${sid}`);
+        if (raw) {
+          try { await removeSessionIndex(env, JSON.parse(raw).email, sid); } catch {}
+        }
+      }
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', '', 0) });
+    }
+
+    if (url.pathname === '/auth/delete' && request.method === 'POST') {
+      const sid = getCookie(request, 'sid');
+      if (!sid) return json({ error: 'Not signed in' }, 401);
+      const raw = await env.KV.get(`session:${sid}`);
+      if (!raw) return json({ error: 'Not signed in' }, 401);
+      const session = JSON.parse(raw);
+
+      // Ask the chat room to wipe this user's messages and close sockets
+      try {
+        const roomId = env.CHAT_ROOM.idFromName('main');
+        const room = env.CHAT_ROOM.get(roomId);
+        await room.fetch(new Request('https://do.internal/admin/delete-user', {
+          method: 'POST',
+          headers: { 'X-Chat-Fingerprint': session.fingerprint || '' },
+        }));
+      } catch {}
+
+      if (session.username) await env.KV.delete(`username:${session.username}`);
+      await env.KV.delete(`profile:${session.email}`);
+      await deleteAllSessions(env, session.email);
+
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', '', 0) });
     }
 

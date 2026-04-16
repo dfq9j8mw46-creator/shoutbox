@@ -283,7 +283,10 @@ export const HTML = `<!DOCTYPE html>
     font-weight: 600;
     font-size: 14px;
   }
-  #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  #profile-box .actions .spacer { flex: 1; }
+  .btn-danger { background: #5a1f1f; color: #f5bebe; }
+  .btn-danger:hover { background: #7a2a2a; }
 
   /* --- Build badge + verify modal --------------------------------------- */
   #build-badge {
@@ -474,6 +477,8 @@ export const HTML = `<!DOCTYPE html>
       </div>
     </div>
     <div class="actions">
+      <button class="btn btn-danger" id="profile-delete">Delete account</button>
+      <span class="spacer"></span>
       <button class="btn" id="profile-cancel">Cancel</button>
       <button class="btn btn-primary" id="profile-save">Save</button>
     </div>
@@ -504,6 +509,7 @@ export const HTML = `<!DOCTYPE html>
   const colorPreview = document.getElementById('color-preview');
   const profileSave = document.getElementById('profile-save');
   const profileCancel = document.getElementById('profile-cancel');
+  const profileDelete = document.getElementById('profile-delete');
   const connStatus  = document.getElementById('conn-status');
 
   let ws = null;
@@ -685,6 +691,28 @@ export const HTML = `<!DOCTYPE html>
   profileCancel.addEventListener('click', () => profileModal.classList.remove('open'));
   profileModal.addEventListener('click', (e) => {
     if (e.target === profileModal) profileModal.classList.remove('open');
+  });
+
+  profileDelete.addEventListener('click', async () => {
+    if (!confirm('Delete your account? This removes your profile, username, all your messages, and signs out every device. This cannot be undone.')) return;
+    const typed = prompt('Type DELETE to confirm:');
+    if (typed !== 'DELETE') return;
+    try {
+      const res = await fetch('/auth/delete', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Delete failed');
+        return;
+      }
+    } catch {
+      alert('Network error');
+      return;
+    }
+    if (ws) { try { ws.close(); } catch {} }
+    profileModal.classList.remove('open');
+    myUsername = '';
+    myColor = '';
+    showAuth();
   });
 
   colorInput.addEventListener('input', () => {

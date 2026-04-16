@@ -21,6 +21,27 @@ export class ChatRoom {
   async fetch(request) {
     await this.initialized;
 
+    const url = new URL(request.url);
+    if (url.pathname === '/admin/delete-user' && request.method === 'POST') {
+      const fp = request.headers.get('X-Chat-Fingerprint') || '';
+      if (!fp) return new Response('missing fingerprint', { status: 400 });
+
+      const before = this.messages.length;
+      this.messages = this.messages.filter((m) => m.fingerprint !== fp);
+      if (this.messages.length !== before) {
+        await this.state.storage.put('messages', this.messages);
+        this.broadcast({ type: 'history', messages: this.messages });
+      }
+      for (const ws of this.state.getWebSockets()) {
+        const a = ws.deserializeAttachment() || {};
+        if (a.fingerprint === fp) {
+          try { ws.close(1000, 'account deleted'); } catch {}
+        }
+      }
+      this.broadcastOnline();
+      return new Response('ok');
+    }
+
     const upgradeHeader = request.headers.get('Upgrade');
     if (!upgradeHeader || upgradeHeader !== 'websocket') {
       return new Response('Expected WebSocket', { status: 426 });
