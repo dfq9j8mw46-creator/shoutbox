@@ -770,7 +770,14 @@ export const HTML = `<!DOCTYPE html>
     cur.username = username;
     if (color) cur.color = color;
     if (online) cur.online = true;
+    // delete + set moves the key to the end so the oldest entry is always
+    // the first one returned by .keys() — gives us a simple FIFO cap.
+    knownUsers.delete(key);
     knownUsers.set(key, cur);
+    if (knownUsers.size > 500) {
+      const oldest = knownUsers.keys().next().value;
+      knownUsers.delete(oldest);
+    }
   }
   function setOnlineUsers(users) {
     for (const v of knownUsers.values()) v.online = false;
@@ -1267,8 +1274,12 @@ export const HTML = `<!DOCTYPE html>
       }
 
       if (data.type === 'msg') {
+        // Check scroll position BEFORE appending so the new node doesn't
+        // skew the math. Only auto-scroll if the user is already near the
+        // bottom — otherwise they're reading history and a jump is annoying.
+        const nearBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
         appendMsg(data, true);
-        scrollBottom();
+        if (nearBottom) scrollBottom();
       }
 
       if (data.type === 'online') {
@@ -1619,10 +1630,9 @@ export const HTML = `<!DOCTYPE html>
         myColor = data.color;
         notifyOn = notifyToggle.checked;
         localStorage.setItem('notify', notifyOn ? 'on' : 'off');
-        // Notify the Durable Object of the profile change
-        if (ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'profile', username: myUsername, color: myColor }));
-        }
+        // The Worker already pushed the new profile to the Durable Object via
+        // its /admin/update-user admin route before responding, so there's
+        // nothing to announce from here.
         profileModal.classList.remove('open');
       } else {
         const err = await res.json();

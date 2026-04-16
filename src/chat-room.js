@@ -16,7 +16,6 @@ const KICK_STRIKES = 3;
 export class ChatRoom {
   constructor(state) {
     this.state = state;
-    this.sessions = [];   // { ws, username, color }
     this.messages = [];    // { username, color, text, ts }
 
     // Load saved messages on first request
@@ -92,7 +91,6 @@ export class ChatRoom {
     // Send history to the new client
     server.send(JSON.stringify({ type: 'history', messages: this.messages }));
 
-    this.sessions = this.getActiveSessions();
     this.broadcastOnline();
 
     return new Response(null, { status: 101, webSocket: client });
@@ -143,39 +141,23 @@ export class ChatRoom {
       this.broadcast({ type: 'msg', ...msg });
     }
 
-    // Allow live profile updates over the socket
-    if (data.type === 'profile') {
-      let changed = false;
-      if (typeof data.username === 'string' && /^[a-zA-Z0-9_\-]{1,20}$/.test(data.username)) {
-        attachment.username = data.username;
-        changed = true;
-      }
-      if (typeof data.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.color)) {
-        attachment.color = data.color;
-        changed = true;
-      }
-      if (changed) {
-        ws.serializeAttachment(attachment);
-        this.broadcastOnline();
-      }
-    }
+    // Profile updates are intentionally not accepted over the WebSocket.
+    // The Worker route /auth/profile validates changes (username reservation,
+    // color contrast, etc.) and pushes the authoritative values via the
+    // /admin/update-user admin route. Trusting client-sent { type: 'profile' }
+    // here would let a malicious client impersonate any username in live
+    // messages and the online list until reconnect.
   }
 
-  async webSocketClose(ws) {
-    this.sessions = this.getActiveSessions();
+  async webSocketClose() {
     this.broadcastOnline();
   }
 
-  async webSocketError(ws) {
-    this.sessions = this.getActiveSessions();
+  async webSocketError() {
     this.broadcastOnline();
   }
 
   // --- Internal helpers ----------------------------------------------------
-
-  getActiveSessions() {
-    return this.state.getWebSockets();
-  }
 
   broadcast(data) {
     const payload = JSON.stringify(data);
@@ -189,7 +171,10 @@ export class ChatRoom {
     const byKey = new Map();
     for (const ws of sockets) {
       const a = ws.deserializeAttachment() || {};
-      const key = a.fingerprint || a.username || 'anon';
+      // Dedup tabs of the same user by fingerprint. Fall back to the
+      // socket object itself so unauthenticated/legacy connections stay
+      // distinct instead of collapsing to a single "anon" row.
+      const key = a.fingerprint || ws;
       if (byKey.has(key)) continue;
       byKey.set(key, {
         username: a.username || 'Anon',

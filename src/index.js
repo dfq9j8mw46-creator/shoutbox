@@ -44,6 +44,16 @@ function isSecureRequest(request, env) {
   return proto === 'https:' || proto === 'https';
 }
 
+// Gate for returning magic codes/links directly in HTTP responses.
+// Only active when EMAIL_API_KEY is unset AND the request is from a dev host
+// (localhost) or DEV_MODE is explicitly set. This prevents a production deploy
+// with no email provider from becoming an open auth bypass.
+function isDev(request, env) {
+  if (env.DEV_MODE === 'true') return true;
+  const host = (request.headers.get('Host') || '').toLowerCase().split(':')[0];
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+}
+
 const SESSION_TTL = 60 * 60 * 24 * 7;
 
 async function hmac(secret, data) {
@@ -507,10 +517,23 @@ async function handleRequest(request, env) {
         return json({ error: 'Invalid email' }, 400);
       }
 
+      // Per-IP limit prevents one attacker rotating through many addresses
+      // to burn the email provider's quota.
+      const sendIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const ipRl = await rateLimit(env, `send_ip_rl:${sendIpHash}`, 20, 60 * 60);
+      if (!ipRl.ok) return json({ error: 'Too many requests' }, 429);
+
       // Prevent mailbombing a target: 5 sends per hour per email address.
       const rl = await rateLimit(env, `send_rate:${email}`, 5, 60 * 60);
       if (!rl.ok) {
         return json({ error: `Too many requests - try again in ${Math.ceil(rl.retryAfterSec / 60)} min` }, 429);
+      }
+
+      // Without an email provider, the only way to deliver a code is to return
+      // it in the HTTP response. Refuse that path outside dev so a misconfigured
+      // production deploy doesn't hand out magic links to anyone who asks.
+      if (!env.EMAIL_API_KEY && !isDev(request, env)) {
+        return json({ error: 'Email service not configured' }, 500);
       }
 
       const mode = authMode(request.headers.get('User-Agent') || '');
@@ -677,7 +700,6 @@ async function handleRequest(request, env) {
       const credId = credential.id;
       const publicKey = b64urlFromBytes(credential.publicKey);
 
-      let recoveryCodes = null;
       if (ch.isNew) {
         // Race: make sure no one else grabbed the username while we were verifying
         const taken = await env.KV.get(`username:${ch.userName}`);
@@ -685,20 +707,36 @@ async function handleRequest(request, env) {
           return json({ error: 'Username taken' }, 409);
         }
         await createPasskeyProfile(env, ch.ownerId, ch.userName, secret);
-        recoveryCodes = await createRecoveryCodes(env, ch.ownerId);
       }
 
-      await env.KV.put(
-        `credential:${credId}`,
-        JSON.stringify({
-          ownerId: ch.ownerId,
-          publicKey,
-          counter: credential.counter || 0,
-          transports: (body.response && body.response.response && body.response.response.transports) || [],
-          createdAt: new Date().toISOString(),
-        }),
-      );
-      await addCredentialId(env, ch.ownerId, credId);
+      let recoveryCodes = null;
+      try {
+        await env.KV.put(
+          `credential:${credId}`,
+          JSON.stringify({
+            ownerId: ch.ownerId,
+            publicKey,
+            counter: credential.counter || 0,
+            transports: (body.response && body.response.response && body.response.response.transports) || [],
+            createdAt: new Date().toISOString(),
+          }),
+        );
+        await addCredentialId(env, ch.ownerId, credId);
+        if (ch.isNew) {
+          recoveryCodes = await createRecoveryCodes(env, ch.ownerId);
+        }
+      } catch (e) {
+        // Best-effort rollback so a half-finished signup doesn't strand the
+        // username reservation (blocking re-registration).
+        if (ch.isNew) {
+          try { await env.KV.delete(`profile:${ch.ownerId}`); } catch {}
+          try { await deleteUsernameIfOwned(env, ch.userName, ch.ownerId); } catch {}
+          try { await env.KV.delete(`recovery:${ch.ownerId}`); } catch {}
+        }
+        try { await env.KV.delete(`credential:${credId}`); } catch {}
+        try { await removeCredentialId(env, ch.ownerId, credId); } catch {}
+        throw e;
+      }
 
       // Only issue a session if this was a fresh signup; signed-in users already have one.
       const headers = new Headers({ 'Content-Type': 'application/json' });
@@ -825,6 +863,13 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname === '/auth/recovery' && request.method === 'POST') {
+      // Per-user lockout protects a single account; this IP limit stops a
+      // brute-forcer from rotating usernames to burn server CPU (PBKDF2 runs
+      // once per attempt regardless of outcome).
+      const recIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const recIpRl = await rateLimit(env, `recovery_ip_rl:${recIpHash}`, 10, 60 * 60);
+      if (!recIpRl.ok) return json({ error: 'Too many requests' }, 429);
+
       const body = await request.json().catch(() => ({}));
       const uname = (body.username || '').trim();
       const code = normalizeRecoveryInput(body.code);
@@ -871,6 +916,10 @@ async function handleRequest(request, env) {
 
       if (matchedIndex === -1) {
         if (rec && !locked) {
+          // Note: KV has no atomic increment, so parallel wrong guesses can
+          // all write attempts=N+1 and a few extra tries slip through before
+          // lockout. The IP rate limit + PBKDF2 CPU cost + 31^12 code space
+          // make this harmless in practice.
           rec.attempts = (rec.attempts || 0) + 1;
           if (rec.attempts >= RECOVERY_MAX_ATTEMPTS) {
             rec.lockedUntil = now + RECOVERY_LOCK_SECONDS * 1000;
@@ -925,7 +974,7 @@ async function handleRequest(request, env) {
       }
       await env.KV.delete(key);
       const sid = await createSession(env, email, secret);
-      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7, { secure }) });
+      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }) });
     }
 
     if (url.pathname === '/auth/verify' && request.method === 'GET') {
@@ -947,7 +996,7 @@ async function handleRequest(request, env) {
         status: 302,
         headers: {
           Location: '/',
-          'Set-Cookie': setCookie('sid', sid, 60 * 60 * 24 * 7, { secure }),
+          'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }),
         },
       });
     }
@@ -970,6 +1019,11 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname.startsWith('/user/') && request.method === 'GET') {
+      // Generous per-IP limit to deter bulk scraping of public profiles.
+      const userIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const userRl = await rateLimit(env, `user_ip_rl:${userIpHash}`, 60, 60);
+      if (!userRl.ok) return json({ error: 'Too many requests' }, 429);
+
       const name = decodeURIComponent(url.pathname.slice(6));
       if (!USERNAME_RE.test(name)) return json({ error: 'Not found' }, 404);
       const ownerEmail = await env.KV.get(`username:${name}`);
@@ -999,6 +1053,10 @@ async function handleRequest(request, env) {
           return json({ error: 'Username: 1-20 chars, letters/numbers/_/-' }, 400);
         }
         if (u !== session.username) {
+          // KV has no compare-and-swap, so two signups racing for the same
+          // name can both succeed here; last writer wins. At <100 users this
+          // is vanishingly rare; if it ever matters, move username claims
+          // into a Durable Object with transactional storage.
           const owner = await env.KV.get(`username:${u}`);
           if (owner && owner !== session.email) {
             return json({ error: 'Username taken' }, 409);
@@ -1092,12 +1150,14 @@ async function handleRequest(request, env) {
       const roomId = env.CHAT_ROOM.idFromName('main');
       const room = env.CHAT_ROOM.get(roomId);
 
-      // Forward with session info as headers
+      // Forward with session info as headers. WebSocket upgrade is a GET
+      // with no body, so don't carry one through (passing a body on GET
+      // can throw in some runtimes).
       const newHeaders = new Headers(request.headers);
       newHeaders.set('X-Chat-Username', session.username);
       newHeaders.set('X-Chat-Color', session.color);
       if (session.fingerprint) newHeaders.set('X-Chat-Fingerprint', session.fingerprint);
-      const newReq = new Request(request.url, { headers: newHeaders, body: request.body, method: request.method });
+      const newReq = new Request(request.url, { headers: newHeaders, method: request.method });
 
       return room.fetch(newReq);
     }
