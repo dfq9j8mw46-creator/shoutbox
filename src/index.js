@@ -385,6 +385,18 @@ const RECOVERY_RE = /^[A-HJ-NP-Z2-9]{12}$/;
 // ---------------------------------------------------------------------------
 export default {
   async fetch(request, env) {
+    try {
+      return await handleRequest(request, env);
+    } catch (e) {
+      // Surface uncaught errors as JSON so the client shows a real message
+      // instead of Cloudflare's HTML error page. Observability is disabled
+      // for privacy, so this is the only place errors become visible.
+      return json({ error: (e && e.message) || 'Unhandled error' }, 500);
+    }
+  },
+};
+
+async function handleRequest(request, env) {
     const url = new URL(request.url);
     const secret = env.SECRET || 'dev-secret-change-me';
 
@@ -965,5 +977,4 @@ export default {
     }
 
     return new Response('Not found', { status: 404 });
-  },
-};
+}
