@@ -151,7 +151,9 @@ export const HTML = `<!DOCTYPE html>
   /* Each user name is rendered as a glass pill that matches the input
      bar below — same translucent wash, same border, same backdrop
      blur. Messages that scroll behind the pill stay readable but
-     softened, tying the top and bottom bars together visually. */
+     softened, tying the top and bottom bars together visually.
+     Hovering the pill brightens the wash and border the same way the
+     input pill does when it receives focus. */
   #users-list li {
     font-size: 13px;
     font-weight: 600;
@@ -166,9 +168,18 @@ export const HTML = `<!DOCTYPE html>
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     flex-shrink: 0;
+    cursor: pointer;
     transition: transform 260ms ease, opacity 220ms ease,
-                max-width 260ms ease, padding 260ms ease;
+                max-width 260ms ease, padding 260ms ease,
+                background-color 150ms ease, border-color 150ms ease;
   }
+  #users-list li:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+  }
+  /* Suppress the default clickable-name underline inside a pill —
+     the pill's hover highlight signals interactivity instead. */
+  #users-list li .clickable-name:hover { text-decoration: none; }
   /* Joining: start above the bar (translateY up) with no opacity, then
      slide down into place. Leaving reverses that and collapses the
      pill's width + padding so neighbors close the gap smoothly. */
@@ -282,7 +293,7 @@ export const HTML = `<!DOCTYPE html>
     max-width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: 5em auto 1fr;
+    grid-template-columns: 3em auto 1fr;
     column-gap: 6px;
     align-items: baseline;
   }
@@ -1562,13 +1573,13 @@ export const HTML = `<!DOCTYPE html>
   // can recompute the label as the message ages.
   function formatRelativeTime(tsMs) {
     const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
-    if (diffSec < 120) return diffSec + 's ago';
+    if (diffSec < 120) return diffSec + 's';
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 120) return diffMin + 'm ago';
+    if (diffMin < 120) return diffMin + 'm';
     const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 48) return diffHr + 'h ago';
+    if (diffHr < 48) return diffHr + 'h';
     const diffDay = Math.floor(diffHr / 24);
-    return diffDay + 'd ago';
+    return diffDay + 'd';
   }
 
   function appendMsg(m, isLive) {
@@ -2122,7 +2133,13 @@ export const HTML = `<!DOCTYPE html>
   const userLiByName = new Map();
 
   function buildUserLi(u) {
+    // The whole pill acts as the click target (clickable-name + the
+    // username dataset both on the li) so hovering anywhere in the
+    // padded area — not just the text — triggers the hover highlight
+    // and opens the user modal on click.
     const li = document.createElement('li');
+    li.classList.add('clickable-name');
+    li.dataset.username = u.username;
     const name = document.createElement('span');
     name.className = 'clickable-name';
     name.style.color = u.color || '';
