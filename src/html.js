@@ -214,10 +214,10 @@ export const HTML = `<!DOCTYPE html>
   /* Stack messages from the bottom: a zero-basis flex spacer absorbs any
      extra height so messages hug the chat bar when the list is short.
      When content overflows the spacer shrinks to 0 (flex-shrink: 1) and
-     normal scroll behavior wins. We use this instead of
-     `margin-top: auto` on the first child because auto-margin resolution
-     is flaky inside an overflow:auto flex container on mobile browsers
-     (the margin doesn't absorb the space and content clings to the top). */
+     normal scroll behavior wins. We use this instead of margin-top:auto
+     on the first child because auto-margin resolution is flaky inside
+     an overflow:auto flex container on mobile browsers (the margin
+     doesn't absorb the space and content clings to the top). */
   #messages::before {
     content: '';
     flex: 1 1 0;
