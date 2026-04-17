@@ -140,9 +140,10 @@ export const HTML = `<!DOCTYPE html>
     overflow-y: auto;
     z-index: 20;
   }
-  /* Each user name is rendered as a pill with a subtle translucent
-     surface. No container behind the bar — pills float directly over
-     the chat background. */
+  /* Each user name is rendered as a glass pill that matches the input
+     bar below — same translucent wash, same border, same backdrop
+     blur. Messages that scroll behind the pill stay readable but
+     softened, tying the top and bottom bars together visually. */
   #users-list li {
     font-size: 12px;
     font-weight: 600;
@@ -152,8 +153,10 @@ export const HTML = `<!DOCTYPE html>
     max-width: 160px;
     padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     flex-shrink: 0;
     transition: transform 260ms ease, opacity 220ms ease,
                 max-width 260ms ease, padding 260ms ease;
@@ -176,14 +179,15 @@ export const HTML = `<!DOCTYPE html>
 
   /* "+N more" pill. Absolutely pinned to the right edge so the users
      row stays visually centered — otherwise its width would shift the
-     list off-center. Matches the user pill surface so the overflow
-     control reads as part of the same strip. */
+     list off-center. Same glass surface as the user pills. */
   #users-more {
     position: absolute;
     right: 12px;
     top: 14px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
@@ -233,12 +237,12 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    /* Bottom padding clears the floating input pill; top padding clears
-       the floating users bar (updated dynamically by a ResizeObserver so
-       it tracks 1, 2, or 3 rows of pills). Both bars float above so the
-       scrollbar on #messages extends from the top of the page all the
-       way down to the input pill. */
-    padding: 44px 12px 52px 4px;
+    /* Bottom padding clears the floating input pill. No top padding:
+       messages scroll behind the floating users pills so their
+       backdrop-filter blur softens whatever text is currently
+       underneath — the scrollbar on #messages therefore runs from the
+       top of the page all the way down to the input pill. */
+    padding: 8px 12px 52px 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -939,7 +943,6 @@ export const HTML = `<!DOCTYPE html>
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
-  const usersBar    = document.getElementById('users-bar');
   const usersList   = document.getElementById('users-list');
   const usersMore   = document.getElementById('users-more');
   const logoutBtn   = document.getElementById('profile-logout');
@@ -2217,19 +2220,6 @@ export const HTML = `<!DOCTYPE html>
   });
 
   window.addEventListener('resize', updateUserOverflow);
-
-  // The floating users bar overlays the top of #messages, so #messages
-  // needs a matching top padding to keep the oldest messages out from
-  // behind it. The bar grows taller when pills wrap onto extra rows, so
-  // track its actual rendered height with a ResizeObserver rather than
-  // hard-coding a number.
-  if (typeof ResizeObserver !== 'undefined') {
-    const syncPad = () => {
-      messagesDiv.style.paddingTop = usersBar.offsetHeight + 'px';
-    };
-    new ResizeObserver(syncPad).observe(usersBar);
-    syncPad();
-  }
 
   // Rebuild the timeline dividers once a second so labels age in place
   // and groups re-coalesce as adjacent messages fall into the same
