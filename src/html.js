@@ -650,8 +650,10 @@ export const HTML = `<!DOCTYPE html>
   }
   /* Glass pill inputs match the email pill aesthetic: translucent
      surface, soft border, fully rounded, with backdrop blur. Focus
-     lifts both the wash and border slightly. */
-  #signup-form input, #code-form input, #recovery-form input {
+     lifts both the wash and border slightly. Direct-child selector so
+     inputs nested inside an .input-pill (e.g. the recovery-code field)
+     stay unstyled here and pick up the .input-pill rules instead. */
+  #signup-form > input, #code-form > input, #recovery-form > input {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--text);
@@ -665,16 +667,16 @@ export const HTML = `<!DOCTYPE html>
     outline: none;
     transition: background-color 120ms ease, border-color 120ms ease;
   }
-  #signup-form input:focus, #code-form input:focus, #recovery-form input:focus {
+  #signup-form > input:focus, #code-form > input:focus, #recovery-form > input:focus {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.22);
   }
   #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  /* Email entry as a glass pill with the submit arrow tucked inside,
-     mirroring the chat #input-wrap + #send-btn pattern. The arrow only
-     appears once the user has typed something (visibility toggled in
-     JS) so the empty state stays clean. */
-  #email-pill {
+  /* Glass pill containing an input + submit arrow, mirroring the chat
+     #input-wrap + #send-btn pattern. Used by both the email entry and
+     the recovery-code entry; the arrow only appears once the user has
+     typed something (visibility toggled in JS). */
+  .input-pill {
     position: relative;
     display: flex;
     align-items: center;
@@ -687,11 +689,11 @@ export const HTML = `<!DOCTYPE html>
     backdrop-filter: blur(14px);
     transition: background-color 120ms ease, border-color 120ms ease;
   }
-  #email-pill:focus-within {
+  .input-pill:focus-within {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.22);
   }
-  #email-pill #email-input {
+  .input-pill > input {
     flex: 1;
     min-width: 0;
     background: transparent;
@@ -701,12 +703,12 @@ export const HTML = `<!DOCTYPE html>
     font-size: 13px;
     outline: none;
   }
-  #email-pill #email-input::placeholder { color: var(--text-muted); font-size: 13px; }
+  .input-pill > input::placeholder { color: var(--text-muted); font-size: 13px; }
   /* Button shrunk just enough that the pill's flex height matches the
      standalone glass inputs in signup/code/recovery (~33px desktop /
      ~46px mobile). Explicitly opts out of the mobile .btn min-height
      since the surrounding pill already provides the 44px tap target. */
-  #email-pill #email-submit-btn {
+  .input-pill > button[type=submit] {
     margin: 3px;
     padding: 4px;
     min-height: 0;
@@ -721,8 +723,8 @@ export const HTML = `<!DOCTYPE html>
     line-height: 0;
     transition: background-color 120ms ease;
   }
-  #email-pill #email-submit-btn:hover { background: #4a7de0; }
-  #email-pill #email-submit-btn svg { display: block; }
+  .input-pill > button[type=submit]:hover { background: #4a7de0; }
+  .input-pill > button[type=submit] > svg { display: block; }
   /* Wrapper reserves enough vertical space for the worst-case status
      (a 2-3 line success/error message) plus the resend row, so the
      centered auth-screen above doesn't reflow when a message lands. */
@@ -960,7 +962,7 @@ export const HTML = `<!DOCTYPE html>
     <button type="button" id="use-email-btn" style="display:none;">Sign in with email</button>
 
     <form id="auth-form" style="display:none;">
-      <div id="email-pill">
+      <div id="email-pill" class="input-pill">
         <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
         <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -980,8 +982,12 @@ export const HTML = `<!DOCTYPE html>
 
     <form id="recovery-form" style="display:none;">
       <input type="text" id="recovery-user" placeholder="username" maxlength="20" autocomplete="username" required>
-      <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" required>
-      <button type="submit" class="btn btn-primary">Sign in</button>
+      <div id="recovery-pill" class="input-pill">
+        <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" required>
+        <button type="submit" class="btn btn-primary" id="recovery-submit-btn" aria-label="Sign in" style="visibility:hidden;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+      </div>
     </form>
   </div>
 
@@ -1150,6 +1156,7 @@ export const HTML = `<!DOCTYPE html>
   const recoveryForm = document.getElementById('recovery-form');
   const recoveryUser = document.getElementById('recovery-user');
   const recoveryCode = document.getElementById('recovery-code');
+  const recoverySubmitBtn = document.getElementById('recovery-submit-btn');
   const rcModal     = document.getElementById('rc-modal');
   const rcCodes     = document.getElementById('rc-codes');
   const rcCopy      = document.getElementById('rc-copy');
@@ -1673,11 +1680,20 @@ export const HTML = `<!DOCTYPE html>
     // "Use passkey instead" escapes back to the primary view from the
     // email or code flows; pointless when we're already on primary.
     usePasskey.style.display = ((onEmail || which === 'code') && pkSupported) ? 'inline' : 'none';
+    // "Use recovery code" only makes sense as an alternative when the user
+    // is staring at the primary login choice; once they've started entering
+    // an email, code, signup name, or recovery code, surfacing it again is
+    // just clutter.
+    useRecovery.style.display = onPrimary ? 'inline' : 'none';
     altsSep2.style.display = onPrimary ? 'none' : 'inline';
     // Re-enable inputs that a previous setLoading() may have disabled.
     [authForm, codeForm, signupForm, recoveryForm].forEach((f) => {
       f.querySelectorAll('input,button').forEach((el) => { el.disabled = false; el.classList.remove('loading'); });
     });
+    // Sync pill arrow visibility to the current input contents in case
+    // the user navigated away with a value typed and then returned.
+    updateEmailSubmitVisibility();
+    updateRecoverySubmitVisibility();
     if (which !== 'code') hideResend();
     stopAuthPolling();
     // Conditional WebAuthn fires on any screen with a webauthn-tagged
@@ -1849,8 +1865,16 @@ export const HTML = `<!DOCTYPE html>
     e.preventDefault();
     showAuthForm('recovery');
     setStatus('');
-    recoveryUser.focus();
+    // Skip auto-focus on touch viewports so the on-screen keyboard
+    // doesn't slam open the moment the user lands on this screen.
+    if (!matchMedia('(max-width: 640px)').matches) recoveryUser.focus();
   });
+  // Mirror the email pill: only surface the submit arrow once the user
+  // has typed something so the empty pill stays uncluttered.
+  function updateRecoverySubmitVisibility() {
+    recoverySubmitBtn.style.visibility = recoveryCode.value.trim() ? 'visible' : 'hidden';
+  }
+  recoveryCode.addEventListener('input', updateRecoverySubmitVisibility);
   recoveryForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const uname = recoveryUser.value.trim();
