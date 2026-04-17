@@ -90,8 +90,12 @@ export const HTML = `<!DOCTYPE html>
   /* Top bar of online users. Floats over the messages area (so the
      scrollbar on #messages can extend all the way to the top of the
      page) with pointer-events:none on the frame; interactive children
-     re-enable them. When the row overflows the page width the "+N more"
-     control opens a shade below that wraps every user into view. */
+     re-enable them. overflow:hidden here (rather than on #users-list)
+     sits flush with the page top, so the 8px breathing room above the
+     pills is part of the animation path — arriving pills slide from
+     y=0 down through the gap to their resting position at y=8. The
+     :has() override drops the clip when the shade is open so the
+     expanded list isn't cut off. */
   #users-bar {
     position: absolute;
     top: 0;
@@ -99,23 +103,24 @@ export const HTML = `<!DOCTYPE html>
     right: 0;
     z-index: 10;
     pointer-events: none;
+    overflow: hidden;
   }
+  #users-bar:has(#users-list.expanded) { overflow: visible; }
   #users-row {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    /* No top padding: the users-list overflow:hidden clip sits flush
-       with the top of the page, so arriving pills slide all the way
-       from y=0 without a gap before the animation starts. */
-    padding: 0 12px 8px;
+    /* 8px top/bottom matches the input-bar padding so the gaps above
+       the pills and below the input pill are identical. */
+    padding: 8px 12px;
     max-width: 100%;
     pointer-events: auto;
   }
-  /* Centered list of user pills. The row wraps up to 3 lines naturally,
-     then overflow:hidden clips any further rows and the JS counts them
-     into the "+N more" pill. Flex centering means arrivals shift
-     existing names outward to "make room in the center". */
+  /* Centered list of user pills. The row wraps up to 3 lines naturally;
+     a 4th row overflows beyond #users-list's max-height and is clipped
+     by the users-bar overflow:hidden above (which also doubles as the
+     page-top clip for the slide-in animation). */
   #users-list {
     list-style: none;
     margin: 0;
@@ -126,10 +131,9 @@ export const HTML = `<!DOCTYPE html>
     gap: 6px;
     min-width: 0;
     justify-content: center;
-    /* ~3 rows of 26px pills with two 6px row-gaps; overflow-hidden clips
-       any fourth row into the +N more pill. */
+    /* ~3 rows of 26px pills with two 6px row-gaps; extra rows spill
+       visibly below and get clipped by #users-bar. */
     max-height: 90px;
-    overflow: hidden;
   }
   /* Expanded "shade": the list pops out of the flex row and anchors to
      the top of #users-bar, overlaying the messages area so every user
@@ -187,7 +191,7 @@ export const HTML = `<!DOCTYPE html>
   #users-more {
     position: absolute;
     right: 12px;
-    top: 0;
+    top: 8px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(14px);
