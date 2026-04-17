@@ -55,6 +55,11 @@ function isDev(request, env) {
 }
 
 const SESSION_TTL = 60 * 60 * 24 * 7;
+const ACCOUNT_OWNER_PREFIX = 'acct:';
+
+function isSyntheticOwnerId(ownerId) {
+  return ownerId.startsWith('pk:') || ownerId.startsWith(ACCOUNT_OWNER_PREFIX);
+}
 
 async function hmac(secret, data) {
   const key = await crypto.subtle.importKey(
@@ -227,6 +232,7 @@ function generateCode() {
 }
 
 async function createSession(env, email, secret) {
+  email = await maybeMigrateChangedLegacyOwnerId(env, email);
   const sid = crypto.randomUUID();
   const profile = await loadOrCreateProfile(env, email, secret);
   const session = JSON.stringify({
@@ -258,14 +264,115 @@ async function reserveUsername(env, base, email) {
   return base + Math.floor(Math.random() * 9999);
 }
 
-// `ownerId` here is the stable account identifier. For accounts created via
-// magic-link it equals the email address at signup time; for passkey-first
-// accounts it's a synthetic 'pk:<uuid>'. The *current* email (which may differ
-// from the original) lives in profile.email and is indexed separately via
-// emailIndex for login lookups.
+async function listOwnedEmails(env, ownerId) {
+  const prefix = 'emailIndex:';
+  let cursor = undefined;
+  const emails = [];
+  do {
+    const page = await env.KV.list({ prefix, cursor, limit: 1000 });
+    const matches = await Promise.all(page.keys.map(async ({ name }) => {
+      const pointer = await env.KV.get(name);
+      return pointer === ownerId ? name.slice(prefix.length) : null;
+    }));
+    for (const email of matches) {
+      if (email) emails.push(email);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return [...new Set(emails)];
+}
+
+async function rewriteOwnedEmailIndexes(env, ownerId, keepEmails = [], nextOwnerId = ownerId) {
+  const keep = new Set(keepEmails.filter(Boolean).map((email) => email.toLowerCase()));
+  const owned = await listOwnedEmails(env, ownerId);
+  await Promise.all(owned.map((email) => (
+    keep.has(email)
+      ? env.KV.put(`emailIndex:${email}`, nextOwnerId)
+      : env.KV.delete(`emailIndex:${email}`)
+  )));
+  await Promise.all([...keep].map((email) => env.KV.put(`emailIndex:${email}`, nextOwnerId)));
+}
+
+async function migrateLegacyOwnerId(env, ownerId, profile, keepEmails = []) {
+  if (!ownerId || isSyntheticOwnerId(ownerId)) return ownerId;
+
+  const latestProfileRaw = await env.KV.get(`profile:${ownerId}`);
+  if (!latestProfileRaw) {
+    const keep = keepEmails.find(Boolean);
+    return keep ? ((await env.KV.get(`emailIndex:${keep.toLowerCase()}`)) || ownerId) : ownerId;
+  }
+  const latestProfile = profile || JSON.parse(latestProfileRaw);
+  const newOwnerId = ACCOUNT_OWNER_PREFIX + crypto.randomUUID();
+
+  await env.KV.put(`profile:${newOwnerId}`, JSON.stringify(latestProfile));
+  await env.KV.delete(`profile:${ownerId}`);
+
+  if (latestProfile.username) {
+    const usernameKey = `username:${latestProfile.username}`;
+    const mappedOwner = await env.KV.get(usernameKey);
+    if (mappedOwner === ownerId) {
+      await env.KV.put(usernameKey, newOwnerId);
+    }
+  }
+
+  const credEntries = await listCredentialEntries(env, ownerId);
+  if (credEntries.length) {
+    await env.KV.put(`userCreds:${newOwnerId}`, JSON.stringify(credEntries));
+  }
+  await env.KV.delete(`userCreds:${ownerId}`);
+  await Promise.all(credEntries.map(async ({ id }) => {
+    const raw = await env.KV.get(`credential:${id}`);
+    if (!raw) return;
+    const cred = JSON.parse(raw);
+    if (cred.ownerId !== ownerId) return;
+    cred.ownerId = newOwnerId;
+    await env.KV.put(`credential:${id}`, JSON.stringify(cred));
+  }));
+
+  const recoveryRaw = await env.KV.get(`recovery:${ownerId}`);
+  if (recoveryRaw) {
+    await env.KV.put(`recovery:${newOwnerId}`, recoveryRaw);
+  }
+  await env.KV.delete(`recovery:${ownerId}`);
+
+  const sessionIndexRaw = await env.KV.get(`usessions:${ownerId}`);
+  if (sessionIndexRaw) {
+    const sessionIds = JSON.parse(sessionIndexRaw);
+    const alive = (await Promise.all(sessionIds.map(async (sid) => {
+      const raw = await env.KV.get(`session:${sid}`);
+      if (!raw) return null;
+      const session = JSON.parse(raw);
+      session.email = newOwnerId;
+      await saveSession(env, sid, session);
+      return sid;
+    }))).filter((sid) => sid !== null);
+    if (alive.length) {
+      await env.KV.put(`usessions:${newOwnerId}`, JSON.stringify(alive));
+    }
+  }
+  await env.KV.delete(`usessions:${ownerId}`);
+
+  await rewriteOwnedEmailIndexes(env, ownerId, keepEmails, newOwnerId);
+  return newOwnerId;
+}
+
+async function maybeMigrateChangedLegacyOwnerId(env, ownerId) {
+  if (!ownerId || isSyntheticOwnerId(ownerId)) return ownerId;
+  const raw = await env.KV.get(`profile:${ownerId}`);
+  if (!raw) return ownerId;
+  const profile = JSON.parse(raw);
+  const currentEmail = (profile.email || '').trim().toLowerCase();
+  if (!currentEmail || currentEmail === ownerId) return ownerId;
+  return migrateLegacyOwnerId(env, ownerId, profile, [currentEmail]);
+}
+
+// `ownerId` here is the stable account identifier. Older magic-link accounts
+// start as the signup email; passkey-first accounts and migrated legacy
+// accounts use synthetic ids. The *current* email (which may differ from the
+// original) lives in profile.email and is indexed separately via emailIndex.
 async function loadOrCreateProfile(env, ownerId, secret) {
   const key = `profile:${ownerId}`;
-  const isEmailOwner = !ownerId.startsWith('pk:');
+  const isEmailOwner = !isSyntheticOwnerId(ownerId);
   const raw = await env.KV.get(key);
   if (raw) {
     const p = JSON.parse(raw);
@@ -275,6 +382,12 @@ async function loadOrCreateProfile(env, ownerId, secret) {
     // Backfill profile.email for legacy accounts created before email was a
     // first-class field (when ownerId was the email).
     if (isEmailOwner && !p.email) { p.email = ownerId; dirty = true; }
+    // Repair passkey/synthetic-owner accounts corrupted by older profile saves
+    // that dropped the current linked email.
+    if (!isEmailOwner && !p.email) {
+      const aliases = await listOwnedEmails(env, ownerId);
+      if (aliases.length === 1) { p.email = aliases[0]; dirty = true; }
+    }
     if (p.username && !(await env.KV.get(`username:${p.username}`))) {
       await env.KV.put(`username:${p.username}`, ownerId);
     }
@@ -300,6 +413,16 @@ async function loadOrCreateProfile(env, ownerId, secret) {
 async function resolveOwnerIdForEmail(env, email) {
   const existing = await env.KV.get(`emailIndex:${email}`);
   if (existing) return existing;
+  const legacyRaw = await env.KV.get(`profile:${email}`);
+  if (legacyRaw) {
+    const legacyProfile = JSON.parse(legacyRaw);
+    const currentEmail = (legacyProfile.email || '').trim().toLowerCase();
+    if (!currentEmail || currentEmail === email) {
+      await env.KV.put(`emailIndex:${email}`, email);
+      return email;
+    }
+    await migrateLegacyOwnerId(env, email, legacyProfile, [currentEmail]);
+  }
   await env.KV.put(`emailIndex:${email}`, email);
   return email;
 }
@@ -315,7 +438,12 @@ async function saveSession(env, sid, session) {
 async function loadSession(env, sid) {
   const raw = await env.KV.get(`session:${sid}`);
   if (!raw) return null;
-  return JSON.parse(raw);
+  const session = JSON.parse(raw);
+  const nextOwnerId = await maybeMigrateChangedLegacyOwnerId(env, session.email);
+  if (nextOwnerId === session.email) return session;
+  const migratedRaw = await env.KV.get(`session:${sid}`);
+  if (!migratedRaw) return null;
+  return JSON.parse(migratedRaw);
 }
 
 async function updateAllSessions(env, email, patch) {
@@ -673,7 +801,7 @@ async function handleRequest(request, env) {
         excludeCredentials: excludeIds.map((id) => ({ id })),
         authenticatorSelection: {
           residentKey: 'required',
-          userVerification: 'preferred',
+          userVerification: 'required',
         },
       });
 
@@ -713,7 +841,7 @@ async function handleRequest(request, env) {
           expectedChallenge: ch.challenge,
           expectedOrigin,
           expectedRPID: rpID,
-          requireUserVerification: false,
+          requireUserVerification: true,
         });
       } catch (e) {
         return json({ error: e.message || 'Verification failed' }, 400);
@@ -786,7 +914,7 @@ async function handleRequest(request, env) {
       const rpID = url.hostname;
       const options = await generateAuthenticationOptions({
         rpID,
-        userVerification: 'preferred',
+        userVerification: 'required',
       });
       const cid = crypto.randomUUID();
       await env.KV.put(
@@ -831,7 +959,7 @@ async function handleRequest(request, env) {
             counter: cred.counter,
             transports: cred.transports,
           },
-          requireUserVerification: false,
+          requireUserVerification: true,
         });
       } catch (e) {
         return json({ error: e.message || 'Verification failed' }, 400);
@@ -1141,23 +1269,23 @@ async function handleRequest(request, env) {
       }
       const profile = JSON.parse(profileRaw);
 
+      let ownerIdForWrite = ownerId;
+      if (!isSyntheticOwnerId(ownerId) && newEmail !== ownerId) {
+        ownerIdForWrite = await migrateLegacyOwnerId(env, ownerId, profile, [newEmail]);
+      }
+
       // Re-check conflict: the token could have been issued before someone
       // else claimed the same address.
       const existingOwner = await env.KV.get(`emailIndex:${newEmail}`);
-      if (existingOwner && existingOwner !== ownerId) {
+      if (existingOwner && existingOwner !== ownerIdForWrite) {
         return new Response('That email is now in use. <a href="/">Return</a>', {
           status: 409, headers: { 'Content-Type': 'text/html' },
         });
       }
 
-      const oldEmail = profile.email;
       profile.email = newEmail;
-      await env.KV.put(`profile:${ownerId}`, JSON.stringify(profile));
-      await env.KV.put(`emailIndex:${newEmail}`, ownerId);
-      if (oldEmail && oldEmail !== newEmail) {
-        const pointer = await env.KV.get(`emailIndex:${oldEmail}`);
-        if (pointer === ownerId) await env.KV.delete(`emailIndex:${oldEmail}`);
-      }
+      await env.KV.put(`profile:${ownerIdForWrite}`, JSON.stringify(profile));
+      await rewriteOwnedEmailIndexes(env, ownerIdForWrite, [newEmail]);
 
       return new Response(null, {
         status: 302,
@@ -1181,13 +1309,16 @@ async function handleRequest(request, env) {
       const profileRaw = await env.KV.get(`profile:${ownerId}`);
       if (!profileRaw) return json({ error: 'Not found' }, 404);
       const profile = JSON.parse(profileRaw);
-      const oldEmail = profile.email;
-      if (!oldEmail) return json({ error: 'No email to remove' }, 400);
+      if (!profile.email) return json({ error: 'No email to remove' }, 400);
+
+      let ownerIdForWrite = ownerId;
+      if (!isSyntheticOwnerId(ownerId)) {
+        ownerIdForWrite = await migrateLegacyOwnerId(env, ownerId, profile, []);
+      }
 
       delete profile.email;
-      await env.KV.put(`profile:${ownerId}`, JSON.stringify(profile));
-      const pointer = await env.KV.get(`emailIndex:${oldEmail}`);
-      if (pointer === ownerId) await env.KV.delete(`emailIndex:${oldEmail}`);
+      await env.KV.put(`profile:${ownerIdForWrite}`, JSON.stringify(profile));
+      await rewriteOwnedEmailIndexes(env, ownerIdForWrite, []);
 
       return json({ ok: true });
     }
@@ -1257,6 +1388,7 @@ async function handleRequest(request, env) {
       }
 
       const nextProfile = {
+        ...currentProfile,
         username: session.username,
         color: session.color,
         fingerprint: session.fingerprint || currentProfile.fingerprint || (await fingerprint(secret, session.email)),
@@ -1308,6 +1440,7 @@ async function handleRequest(request, env) {
       } catch {}
 
       await deleteUsernameIfOwned(env, session.username, session.email);
+      await rewriteOwnedEmailIndexes(env, session.email, []);
       await env.KV.delete(`profile:${session.email}`);
       await deleteAllCredentials(env, session.email);
       await deleteAllSessions(env, session.email);

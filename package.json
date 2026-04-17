@@ -5,7 +5,8 @@
   "description": "Semi-anonymous shoutbox chat on Cloudflare Workers. Magic link auth, 100 message buffer, <100 users.",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.83.0"
