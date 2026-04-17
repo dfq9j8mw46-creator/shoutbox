@@ -1492,19 +1492,23 @@ export const HTML = `<!DOCTYPE html>
           // Excess mention: render as plain text so no ping, no highlight.
           parent.appendChild(document.createTextNode(m[0]));
         } else {
-          seenMentions.add(lower);
-          const span = document.createElement('span');
-          span.className = 'mention';
-          span.textContent = m[0];
-          // Mentions wear the mentioned user's name color so the chat
-          // reads as a conversation between identifiable people. Falls
-          // back to the .mention accent color when the user isn't in
-          // knownUsers yet (haven't seen them in this session).
           const known = knownUsers.get(lower);
-          if (known && known.color) span.style.color = known.color;
-          parent.appendChild(span);
-          if (myUsername && lower === myUsername.toLowerCase()) {
-            mentionedMe = true;
+          const isSelf = myUsername && lower === myUsername.toLowerCase();
+          if (!known && !isSelf) {
+            // Unknown username: render as plain text rather than dressing
+            // it up as a real mention. Avoids "blue but useless" links
+            // for typos / made-up handles.
+            parent.appendChild(document.createTextNode(m[0]));
+          } else {
+            seenMentions.add(lower);
+            const span = document.createElement('span');
+            span.className = 'mention';
+            span.textContent = m[0];
+            // Mentions wear the mentioned user's name color so the chat
+            // reads as a conversation between identifiable people.
+            if (known && known.color) span.style.color = known.color;
+            parent.appendChild(span);
+            if (isSelf) mentionedMe = true;
           }
         }
       }
