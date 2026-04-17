@@ -43,6 +43,32 @@ export const HTML = `<!DOCTYPE html>
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
+  /* --- Scrollbars --------------------------------------------------------
+     A thin, translucent scrollbar that fades into the glass aesthetic:
+     transparent track, a rounded white thumb at ~12% opacity that brightens
+     on hover. The 2px transparent border + background-clip trick shrinks
+     the visible thumb so it looks detached from the scroll gutter. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
   /* --- Chat body layout ------------------------------------------------- */
   #chat-body {
     flex: 1;
