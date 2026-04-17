@@ -1479,6 +1479,17 @@ export const HTML = `<!DOCTYPE html>
   }
   emailInput.addEventListener('input', updateEmailSubmitVisibility);
 
+  // Window during which the messages list keeps re-pinning to the bottom
+  // on every layout/size change after chat opens. Mobile post-login
+  // settles over many frames (auth keyboard dismissing + visualViewport
+  // pin + flex re-layout), so a single scrollBottom() can fire while
+  // clientHeight is stale and leave the user stranded at the top once
+  // the size finally stabilises. The ResizeObserver below uses this
+  // timestamp to keep yanking us to the newest message until the dust
+  // settles, then steps back so manual scrolling works normally.
+  let chatOpenedAt = 0;
+  const POST_LOGIN_PIN_MS = 2500;
+
   function showChat() {
     isAuthed = true;
     resetConnectionState();
@@ -1494,6 +1505,7 @@ export const HTML = `<!DOCTYPE html>
     }
     authScreen.style.display = 'none';
     chatScreen.style.display = 'flex';
+    chatOpenedAt = Date.now();
     connectWS();
   }
 
@@ -2885,6 +2897,22 @@ export const HTML = `<!DOCTYPE html>
     if (document.hidden) return;
     refreshTimestamps();
   }, 10000);
+
+  // Catch every layout shift on the messages list during the brief
+  // window after chat-screen first appears. This is what rescues the
+  // post-login mobile flow: the auth keyboard dismissing and the
+  // visualViewport pin both resize messagesDiv after the initial
+  // history scrollBottom() has already fired (against a stale
+  // clientHeight). Re-pinning here on every resize until the dust
+  // settles guarantees we land on the newest message.
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => {
+      if (chatOpenedAt && Date.now() - chatOpenedAt < POST_LOGIN_PIN_MS) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+    });
+    ro.observe(messagesDiv);
+  }
 
   // Pin the chat screen to the actual visual viewport height so iOS
   // Safari keeps the input bar flush with the top of the keyboard
