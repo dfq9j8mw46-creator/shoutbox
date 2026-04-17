@@ -222,7 +222,9 @@ export const HTML = `<!DOCTYPE html>
     border: none;
     color: var(--text);
     padding: 8px 16px;
-    font-size: 14px;
+    /* Match the chat-message body size (.msg font-size: 13px). Mobile
+       still forces 16px via the iOS auto-zoom guard below. */
+    font-size: 13px;
     outline: none;
   }
   #input-wrap #msg-input::placeholder { color: var(--text-muted); }
