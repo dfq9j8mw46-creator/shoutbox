@@ -1344,6 +1344,21 @@ async function handleRequest(request, env) {
       }, 200, { 'Cache-Control': 'no-store' });
     }
 
+    // ---- Favicon -----------------------------------------------------------
+    // A simple chat-bubble glyph in the app's accent blue. Served inline
+    // as SVG so there's no binary asset to ship alongside the worker.
+    if (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico') {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+        + '<path fill="#5b8def" d="M8 4Q4 4 4 8L4 18Q4 22 8 22L11 22L7 28L15 22L24 22Q28 22 28 18L28 8Q28 4 24 4Z"/>'
+        + '</svg>';
+      return new Response(svg, {
+        headers: {
+          'Content-Type': 'image/svg+xml',
+          'Cache-Control': 'public, max-age=86400',
+        },
+      });
+    }
+
     // ---- Serve the SPA -----------------------------------------------------
     if (url.pathname === '/' || url.pathname === '/index.html') {
       return new Response(HTML, {

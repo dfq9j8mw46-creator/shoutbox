@@ -3,6 +3,7 @@ export const HTML = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Shoutbox</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -104,7 +105,10 @@ export const HTML = `<!DOCTYPE html>
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 8px 12px;
+    /* No top padding: the users-list overflow:hidden clip sits flush
+       with the top of the page, so arriving pills slide all the way
+       from y=0 without a gap before the animation starts. */
+    padding: 0 12px 8px;
     max-width: 100%;
     pointer-events: auto;
   }
@@ -183,7 +187,7 @@ export const HTML = `<!DOCTYPE html>
   #users-more {
     position: absolute;
     right: 12px;
-    top: 14px;
+    top: 0;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(14px);
