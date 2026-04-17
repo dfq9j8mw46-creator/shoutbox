@@ -1563,7 +1563,7 @@ export const HTML = `<!DOCTYPE html>
   // timestamp to keep yanking us to the newest message until the dust
   // settles, then steps back so manual scrolling works normally.
   let chatOpenedAt = 0;
-  const POST_LOGIN_PIN_MS = 3500;
+  const POST_LOGIN_PIN_MS = 6000;
 
   function showChat() {
     isAuthed = true;
@@ -3007,6 +3007,23 @@ export const HTML = `<!DOCTYPE html>
     });
     ro.observe(messagesDiv);
   }
+
+  // Background-tab rescue: if the user signed in via the magic-link
+  // flow in another tab, the original tab's polling /auth/me succeeds
+  // while it's still backgrounded. Browsers throttle layout in
+  // background tabs, so the showChat scroll attempts run against a
+  // half-computed messagesDiv and end up stuck at scrollTop 0. When
+  // the user switches back, snap to the bottom if we're still in the
+  // post-login window. Same rescue applies to the post-login mobile
+  // flow if the user happens to background the tab during the auth
+  // flicker.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !chatOpenedAt) return;
+    if (Date.now() - chatOpenedAt < POST_LOGIN_PIN_MS) {
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      requestAnimationFrame(() => { messagesDiv.scrollTop = messagesDiv.scrollHeight; });
+    }
+  });
 
   // Pin the chat screen to the actual visual viewport height so iOS
   // Safari keeps the input bar flush with the top of the keyboard
