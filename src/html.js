@@ -114,14 +114,6 @@ export const HTML = `<!DOCTYPE html>
   }
   #users-more:hover { color: var(--text); }
 
-  #chat-status #build-badge {
-    color: var(--text-muted);
-    text-decoration: none;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  #chat-status #build-badge:hover { color: var(--text); }
 
   /* --- Icon buttons ------------------------------------------------------ */
   .icon-btn {
@@ -488,10 +480,6 @@ export const HTML = `<!DOCTYPE html>
   .btn-danger:hover { background: #7a2a2a; }
 
   /* --- Build badge + verify modal --------------------------------------- */
-  /* #build-badge now lives inside the subtle #status-line; it picks up the
-     muted color, font-size, and hover styling from that parent. No more
-     pill border / padding. */
-  #build-badge { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   #verify-modal {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,.6);
@@ -664,7 +652,6 @@ export const HTML = `<!DOCTYPE html>
       <div id="chat-status">
         <ul id="users-list"></ul>
         <button id="users-more" type="button" style="display:none;"></button>
-        <a id="build-badge" href="#" title="Click to verify this build">SB</a>
       </div>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
@@ -765,6 +752,7 @@ export const HTML = `<!DOCTYPE html>
         <button class="btn" id="profile-logout" type="button">Sign out</button>
         <button class="btn btn-danger" id="profile-delete" type="button">Delete account</button>
       </div>
+      <button class="btn" id="build-provenance-btn" type="button">Build provenance</button>
     </div>
     <div class="actions">
       <button class="btn btn-primary" id="profile-save">Save</button>
@@ -1844,8 +1832,8 @@ export const HTML = `<!DOCTYPE html>
     showAuth();
   });
 
-  // --- Build provenance badge ---
-  const buildBadge   = document.getElementById('build-badge');
+  // --- Build provenance (triggered from the profile modal) ---
+  const buildProvenanceBtn = document.getElementById('build-provenance-btn');
   const verifyModal  = document.getElementById('verify-modal');
   const vmCommitLink = document.getElementById('vm-commit-link');
   const vmBuiltAt    = document.getElementById('vm-built-at');
@@ -1860,14 +1848,10 @@ export const HTML = `<!DOCTYPE html>
       const res = await fetch('/version.json');
       if (!res.ok) return;
       versionInfo = await res.json();
-      const sha = versionInfo.commit || 'unknown';
-      const short = sha === 'dev' ? 'dev' : sha.slice(0, 7);
-      buildBadge.textContent = 'SB ' + short;
     } catch {}
   }
 
-  buildBadge.addEventListener('click', (e) => {
-    e.preventDefault();
+  buildProvenanceBtn.addEventListener('click', () => {
     if (!versionInfo) return;
     const sha  = versionInfo.commit || '';
     const repo = versionInfo.repo || '';
@@ -1884,6 +1868,8 @@ export const HTML = `<!DOCTYPE html>
       'gh release download build-' + short + ' --repo ' + slug,
       'gh attestation verify index.js --owner ' + owner,
     ].join(String.fromCharCode(10));
+    // Close profile modal so the verify modal isn't stacked on top.
+    profileModal.classList.remove('open');
     verifyModal.classList.add('open');
   });
   verifyClose.addEventListener('click', () => verifyModal.classList.remove('open'));
