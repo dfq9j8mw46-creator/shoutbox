@@ -1451,6 +1451,14 @@ export const HTML = `<!DOCTYPE html>
     resetConnectionState();
     stopAuthPolling();
     abortConditionalPasskey();
+    // Dismiss any auth-flow input still focused (e.g. a mobile keyboard
+    // up from the email-code field). If we don't, the visualViewport
+    // stays shrunk while history loads, the initial scrollBottom() pins
+    // to the wrong height, and the user lands somewhere mid-list when
+    // the keyboard finally dismisses.
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
     authScreen.style.display = 'none';
     chatScreen.style.display = 'flex';
     connectWS();
@@ -1990,6 +1998,14 @@ export const HTML = `<!DOCTYPE html>
         data.messages.forEach((m) => appendMsg(m, false));
         refreshTimestamps();
         scrollBottom();
+        // Belt-and-suspenders for the post-login first paint: the
+        // chat-screen was display:none until a moment ago, the iOS
+        // visualViewport pin may still be in flight, and a fresh
+        // sign-in can race with the keyboard dismissing. Re-pin on
+        // the next two frames so the user reliably lands at the
+        // newest message instead of the top of the list.
+        requestAnimationFrame(scrollBottom);
+        requestAnimationFrame(() => requestAnimationFrame(scrollBottom));
       }
 
       if (data.type === 'msg') {
