@@ -257,7 +257,7 @@ export const HTML = `<!DOCTYPE html>
     max-width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: 4.5em auto 1fr;
+    grid-template-columns: 3.5em auto 1fr;
     column-gap: 6px;
     align-items: baseline;
   }
