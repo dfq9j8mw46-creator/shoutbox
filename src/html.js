@@ -599,12 +599,14 @@ export const HTML = `<!DOCTYPE html>
   #rc-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   /* --- Grouped sections in profile modal --------------------------------- */
-  #pk-section, #email-section, #account-section {
+  #pk-section, #email-section, #account-section, #provenance-section {
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     padding-top: 6px;
     display: flex; flex-direction: column; gap: 6px;
   }
-  #pk-section h4, #email-section h4, #account-section h4 { font-size: 13px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  /* All section headings (and the modal's title) share the same uppercase
+     muted-label treatment so the modal reads as a sequence of peers. */
+  #profile-heading, #pk-section h4, #email-section h4, #account-section h4 { font-size: 13px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
   .account-actions { display: flex; gap: 8px; justify-content: space-between; }
   #email-current {
     display: flex; align-items: center; gap: 8px;
@@ -781,7 +783,6 @@ export const HTML = `<!DOCTYPE html>
     gap: 10px;
     position: relative;
   }
-  #profile-box h3 { font-size: 13px; font-weight: 600; }
   #profile-meta {
     font-size: 13px;
     color: var(--text-muted);
@@ -1114,7 +1115,7 @@ export const HTML = `<!DOCTYPE html>
 <div id="profile-modal">
   <div id="profile-box">
     <button type="button" id="profile-close" aria-label="Close">&times;</button>
-    <h3>Edit Profile</h3>
+    <h4 id="profile-heading">Profile</h4>
     <div id="profile-meta">
       Joined <span id="profile-joined">—</span> · <span id="profile-fp" class="fp">—</span>
     </div>
@@ -1166,8 +1167,10 @@ export const HTML = `<!DOCTYPE html>
         <button class="btn" id="revoke-others-btn" type="button">Revoke all</button>
         <button class="btn btn-danger" id="profile-delete" type="button">Delete</button>
       </div>
-      <button class="btn" id="build-provenance-btn" type="button">Build provenance</button>
       <button class="btn btn-primary" id="profile-save">Save</button>
+    </div>
+    <div id="provenance-section">
+      <button class="btn" id="build-provenance-btn" type="button">Build provenance</button>
     </div>
   </div>
 </div>
