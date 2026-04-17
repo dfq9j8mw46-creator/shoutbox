@@ -942,8 +942,7 @@ export const HTML = `<!DOCTYPE html>
 
   <div id="auth-stack">
     <div id="auth-primary" style="display:none;">
-      <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
-      <button class="btn" id="pk-signup-btn">Create account</button>
+      <button class="btn btn-primary" id="pk-signin-btn">Continue with passkey</button>
     </div>
 
     <button type="button" id="use-email-btn" style="display:none;">Sign in with email</button>
@@ -1131,7 +1130,6 @@ export const HTML = `<!DOCTYPE html>
   const signupForm  = document.getElementById('signup-form');
   const signupName  = document.getElementById('signup-name');
   const pkSigninBtn = document.getElementById('pk-signin-btn');
-  const pkSignupBtn = document.getElementById('pk-signup-btn');
   const usePasskey  = document.getElementById('use-passkey');
   const useRecovery = document.getElementById('use-recovery');
   const altsSep2    = document.getElementById('alts-sep2');
@@ -1681,7 +1679,19 @@ export const HTML = `<!DOCTYPE html>
       const startRes = await fetch('/auth/webauthn/auth/start', { method: 'POST' });
       const startData = await startRes.json();
       if (!startRes.ok) throw new Error(startData.error || 'Failed to start');
-      const assertion = await passkeyGet(startData.options);
+      let assertion;
+      try {
+        assertion = await passkeyGet(startData.options);
+      } catch {
+        // WebAuthn returns the same NotAllowedError whether the user
+        // has no passkey for this site or just cancelled the prompt.
+        // Either way, surface the signup form so they can pick a
+        // username and create one — they can hit Back to retry sign-in.
+        showAuthForm('signup');
+        setStatus('No passkey found - pick a username to create one.');
+        signupName.focus();
+        return;
+      }
       const finRes = await fetch('/auth/webauthn/auth/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1693,8 +1703,9 @@ export const HTML = `<!DOCTYPE html>
       setStored('auth.lastMethod', 'passkey');
       checkAuth();
     } catch (e) {
-      setStatus((e && e.message) || 'Cancelled', true);
-      // After an error, restart conditional UI so autofill still works.
+      // Server-side failure (network, /auth/webauthn/* error). Stay on
+      // primary so the user can retry the same button.
+      setStatus((e && e.message) || 'Sign-in failed', true);
       if (authScreen.style.display !== 'none') startConditionalPasskey();
     } finally {
       setLoading(pkSigninBtn, false);
@@ -1795,11 +1806,6 @@ export const HTML = `<!DOCTYPE html>
   }
 
   pkSigninBtn.addEventListener('click', doPasskeySignin);
-  pkSignupBtn.addEventListener('click', () => {
-    showAuthForm('signup');
-    setStatus('');
-    signupName.focus();
-  });
   signupForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const n = signupName.value.trim();
