@@ -2,7 +2,7 @@ export const HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Shoutbox</title>
 <style>
@@ -235,17 +235,9 @@ export const HTML = `<!DOCTYPE html>
   }
   .icon-btn svg { display: block; }
 
-  /* --- Mobile: prevent iOS auto-zoom on input focus --------------------- */
-  @media (max-width: 640px) {
-    input, select, textarea { font-size: 16px !important; }
-    /* Bump the chat message body too so typed text and rendered messages
-       are the same size — otherwise the input value (16px) sits next
-       to messages (13px) and the typed text reads as oversized.
-       !important because the unconditional .msg { font-size: 13px }
-       lives later in the stylesheet and would otherwise win. */
-    .msg { font-size: 16px !important; }
-    .msg .timeline { font-size: 16px !important; }
-  }
+  /* iOS auto-zoom on input focus is disabled via the viewport meta
+     (maximum-scale=1, user-scalable=no), so inputs can stay at their
+     natural 13px size matching the chat messages around them. */
 
   /* --- Small buttons ----------------------------------------------------- */
   .btn {
