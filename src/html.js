@@ -517,20 +517,7 @@ export const HTML = `<!DOCTYPE html>
   #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
-  #signup-form, #recovery-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  #signup-form input { width: 240px; }
-  #recovery-form input { width: 180px; }
-  #signup-form input, #recovery-form input {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 13px;
-    outline: none;
-  }
-  #signup-form input:focus, #recovery-form input:focus { border-color: var(--accent); }
-  /* --- Auth button loading state + resend row --------------------------- */
+/* --- Auth button loading state + resend row --------------------------- */
   #auth-screen .btn[disabled] {
     opacity: .65;
     cursor: not-allowed;
@@ -650,18 +637,38 @@ export const HTML = `<!DOCTYPE html>
   }
   .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  #auth-form, #code-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  #code-form input {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 13px;
-    width: 240px;
-    outline: none;
+  #auth-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  /* Stack the secondary forms vertically (input(s) on top, button below)
+     so they read as a focused single-purpose prompt rather than a row of
+     controls. The Continue/Sign-in button sits centered beneath. */
+  #signup-form, #code-form, #recovery-form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
   }
-  #code-form input:focus { border-color: var(--accent); }
+  /* Glass pill inputs match the email pill aesthetic: translucent
+     surface, soft border, fully rounded, with backdrop blur. Focus
+     lifts both the wash and border slightly. */
+  #signup-form input, #code-form input, #recovery-form input {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    padding: 8px 16px;
+    border-radius: 999px;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    font-size: 13px;
+    width: 320px;
+    max-width: 100%;
+    outline: none;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  #signup-form input:focus, #code-form input:focus, #recovery-form input:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
   #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   /* Email entry as a glass pill with the submit arrow tucked inside,
      mirroring the chat #input-wrap + #send-btn pattern. The arrow only
