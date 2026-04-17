@@ -293,7 +293,7 @@ export const HTML = `<!DOCTYPE html>
     max-width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: 3em auto 1fr;
+    grid-template-columns: 2.5em auto 1fr;
     column-gap: 6px;
     align-items: baseline;
   }
