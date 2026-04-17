@@ -1522,6 +1522,21 @@ export const HTML = `<!DOCTYPE html>
   }
 
   // --- Messages ---
+  // Render a relative timestamp: "Ns ago" for the first 2 minutes,
+  // "Nm ago" up to 2 hours, "Nh ago" up to 2 days, "Nd ago" after that.
+  // The numeric ms value is kept on the element so refreshTimestamps()
+  // can recompute the label as the message ages.
+  function formatRelativeTime(tsMs) {
+    const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
+    if (diffSec < 120) return diffSec + 's ago';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 120) return diffMin + 'm ago';
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 48) return diffHr + 'h ago';
+    const diffDay = Math.floor(diffHr / 24);
+    return diffDay + 'd ago';
+  }
+
   function appendMsg(m, isLive) {
     addKnownUser(m.username, m.color, false);
     const div = document.createElement('div');
@@ -1529,8 +1544,10 @@ export const HTML = `<!DOCTYPE html>
 
     const ts = document.createElement('span');
     ts.className = 'ts';
-    const d = new Date(m.ts);
-    ts.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    ts.dataset.ts = String(m.ts);
+    // Absolute time stays on hover for anyone who wants the exact moment.
+    ts.title = new Date(m.ts).toLocaleString();
+    ts.textContent = formatRelativeTime(m.ts);
 
     const name = document.createElement('span');
     name.className = 'name clickable-name';
@@ -2158,6 +2175,16 @@ export const HTML = `<!DOCTYPE html>
   });
 
   window.addEventListener('resize', updateUserOverflow);
+
+  // Refresh relative timestamps once a second. Cheap for the 100-message
+  // cap the DOM holds, and matches the seconds-precision labels used in
+  // the first two minutes after a message lands.
+  setInterval(() => {
+    const nodes = messagesDiv.querySelectorAll('.ts[data-ts]');
+    for (const el of nodes) {
+      el.textContent = formatRelativeTime(Number(el.dataset.ts));
+    }
+  }, 1000);
 
   // Pin the chat screen to the actual visual viewport height so iOS
   // Safari keeps the input bar flush with the top of the keyboard
