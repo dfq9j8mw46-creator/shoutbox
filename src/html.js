@@ -309,6 +309,10 @@ export const HTML = `<!DOCTYPE html>
     column-gap: 6px;
     align-items: baseline;
   }
+  /* Subtle hover wash so the message under the cursor reads as the
+     active row. Same translucent-white tint used by the input pill,
+     dialed down to keep the chat scan-friendly. */
+  .msg:hover { background: rgba(255, 255, 255, 0.03); }
   .msg .timeline {
     color: var(--text-muted);
     font-size: 13px;
@@ -1685,11 +1689,11 @@ export const HTML = `<!DOCTYPE html>
     div.style.opacity = '0';
     // Force the 0 state to commit before the transition kicks in.
     void div.offsetHeight;
-    div.style.transition = 'max-height 260ms ease-out, opacity 260ms ease-out';
+    div.style.transition = 'max-height 110ms ease-out, opacity 110ms ease-out';
     div.style.maxHeight = targetHeight + 'px';
     div.style.opacity = '1';
 
-    const DURATION = 280;
+    const DURATION = 120;
     let raf = 0;
     let prevBehavior;
     if (autoScroll) {
