@@ -247,9 +247,9 @@ export const HTML = `<!DOCTYPE html>
     flex: 1 1 0;
     min-height: 0;
   }
-  /* Each message is a 3-column grid so the relative time sits in its
-     own right-aligned column (fixed width) and every username starts at
-     the exact same x-offset regardless of how wide the timestamp is. */
+  /* Messages are plain block rows. Time isn't rendered per-message;
+     instead #messages groups consecutive messages that share the same
+     relative-time label under a single .time-divider (see the JS). */
   .msg {
     font-size: 13px;
     line-height: 1.45;
@@ -257,28 +257,36 @@ export const HTML = `<!DOCTYPE html>
     border-left: 2px solid transparent;
     max-width: 100%;
     min-width: 0;
-    display: grid;
-    grid-template-columns: 3.5em auto 1fr;
-    column-gap: 6px;
-    align-items: baseline;
-  }
-  .msg .ts {
-    color: var(--text-muted);
-    font-size: 11px;
-    text-align: right;
-    white-space: nowrap;
-    user-select: none;
+    overflow-wrap: anywhere;
+    word-break: break-all;
   }
   .msg .name {
     font-weight: 600;
-    white-space: nowrap;
+    margin-right: 6px;
     cursor: default;
   }
-  .msg .text {
-    color: var(--text);
-    min-width: 0;
-    overflow-wrap: anywhere;
-    word-break: break-all;
+  .msg .text { color: var(--text); }
+
+  /* Timeline marker that sits above a group of messages sharing the
+     same relative-time label (e.g. "15h ago"). Rendered as a centered
+     label flanked by thin rules so the bucket boundaries read as a
+     subtle timeline. */
+  .time-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 6px 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .time-divider::before,
+  .time-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
   }
 
   /* --- Floating input bar ----------------------------------------------- */
@@ -1482,6 +1490,7 @@ export const HTML = `<!DOCTYPE html>
       if (data.type === 'history') {
         messagesDiv.innerHTML = '';
         data.messages.forEach((m) => appendMsg(m, false));
+        refreshTimestamps();
         scrollBottom();
       }
 
@@ -1491,6 +1500,7 @@ export const HTML = `<!DOCTYPE html>
         // bottom — otherwise they're reading history and a jump is annoying.
         const nearBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
         appendMsg(data, true);
+        refreshTimestamps();
         if (nearBottom) scrollBottom();
       }
 
@@ -1550,13 +1560,11 @@ export const HTML = `<!DOCTYPE html>
     addKnownUser(m.username, m.color, false);
     const div = document.createElement('div');
     div.className = 'msg';
-
-    const ts = document.createElement('span');
-    ts.className = 'ts';
-    ts.dataset.ts = String(m.ts);
-    // Absolute time stays on hover for anyone who wants the exact moment.
-    ts.title = new Date(m.ts).toLocaleString();
-    ts.textContent = formatRelativeTime(m.ts);
+    // Raw timestamp rides along on the message itself so
+    // refreshTimestamps() can recompute the timeline dividers. Absolute
+    // time stays available on hover for anyone who wants the exact moment.
+    div.dataset.ts = String(m.ts);
+    div.title = new Date(m.ts).toLocaleString();
 
     const name = document.createElement('span');
     name.className = 'name clickable-name';
@@ -1573,15 +1581,41 @@ export const HTML = `<!DOCTYPE html>
       if (isLive) playNotification();
     }
 
-    div.appendChild(ts);
     div.appendChild(name);
     div.appendChild(text);
     messagesDiv.appendChild(div);
 
-    // Keep DOM limited
-    while (messagesDiv.children.length > 100) {
-      messagesDiv.removeChild(messagesDiv.firstChild);
+    // Keep DOM limited to 100 messages (dividers don't count toward the cap;
+    // they're rebuilt from scratch by refreshTimestamps on every tick).
+    while (messagesDiv.querySelectorAll('.msg').length > 100) {
+      const first = messagesDiv.firstElementChild;
+      if (!first) break;
+      first.remove();
     }
+  }
+
+  // Rebuild the timeline dividers. We remove every existing .time-divider
+  // and walk the messages in DOM order, inserting a fresh divider before
+  // each group whose label differs from the previous message's. Scroll
+  // position is anchored to the bottom so a user sitting at "now" stays
+  // there and a user scrolled into history stays on the same content
+  // even if divider insertion changes the surrounding heights.
+  function refreshTimestamps() {
+    const anchorFromBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop;
+    messagesDiv.querySelectorAll('.time-divider').forEach((d) => d.remove());
+    const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
+    let prevLabel = null;
+    for (const msg of msgs) {
+      const label = formatRelativeTime(Number(msg.dataset.ts));
+      if (label !== prevLabel) {
+        const divider = document.createElement('div');
+        divider.className = 'time-divider';
+        divider.textContent = label;
+        msg.before(divider);
+      }
+      prevLabel = label;
+    }
+    messagesDiv.scrollTop = messagesDiv.scrollHeight - anchorFromBottom;
   }
 
   function scrollBottom() {
@@ -2195,15 +2229,11 @@ export const HTML = `<!DOCTYPE html>
     syncPad();
   }
 
-  // Refresh relative timestamps once a second. Cheap for the 100-message
-  // cap the DOM holds, and matches the seconds-precision labels used in
-  // the first two minutes after a message lands.
-  setInterval(() => {
-    const nodes = messagesDiv.querySelectorAll('.ts[data-ts]');
-    for (const el of nodes) {
-      el.textContent = formatRelativeTime(Number(el.dataset.ts));
-    }
-  }, 1000);
+  // Rebuild the timeline dividers once a second so labels age in place
+  // and groups re-coalesce as adjacent messages fall into the same
+  // relative-time bucket (e.g. two messages previously at 119s and 118s
+  // merge into a single "2m ago" group after the next tick).
+  setInterval(refreshTimestamps, 1000);
 
   // Pin the chat screen to the actual visual viewport height so iOS
   // Safari keeps the input bar flush with the top of the keyboard
