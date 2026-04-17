@@ -448,6 +448,23 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-screen h2 { font-size: 13px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
+  /* Wrapper around the per-state form area (primary buttons, email pill,
+     code/signup/recovery forms). A fixed min-height absorbs the height
+     differences between states so the heading above and alts below
+     don't shift when the user toggles between passkey and email. The
+     visible content centers within the reserved space. */
+  #auth-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    width: 100%;
+    min-height: 100px;
+  }
+  @media (max-width: 640px) {
+    #auth-stack { min-height: 170px; }
+  }
   #auth-primary { display: flex; gap: 8px; }
   /* Glass button treatment matches the chat-input pill (#input-wrap):
      translucent surface, soft border, fully rounded, with backdrop blur.
@@ -923,37 +940,39 @@ export const HTML = `<!DOCTYPE html>
 <div id="auth-screen" style="display:none;">
   <h1>Shoutbox</h1>
 
-  <div id="auth-primary" style="display:none;">
-    <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
-    <button class="btn" id="pk-signup-btn">Create account</button>
-  </div>
-
-  <button type="button" id="use-email-btn" style="display:none;">Sign in with email</button>
-
-  <form id="auth-form" style="display:none;">
-    <div id="email-pill">
-      <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
-      <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-      </button>
+  <div id="auth-stack">
+    <div id="auth-primary" style="display:none;">
+      <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
+      <button class="btn" id="pk-signup-btn">Create account</button>
     </div>
-  </form>
 
-  <form id="signup-form" style="display:none;">
-    <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
-    <button type="submit" class="btn btn-primary">Create passkey</button>
-  </form>
+    <button type="button" id="use-email-btn" style="display:none;">Sign in with email</button>
 
-  <form id="code-form" style="display:none;">
-    <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
-    <button type="submit" class="btn btn-primary">Sign in</button>
-  </form>
+    <form id="auth-form" style="display:none;">
+      <div id="email-pill">
+        <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
+        <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+      </div>
+    </form>
 
-  <form id="recovery-form" style="display:none;">
-    <input type="text" id="recovery-user" placeholder="username" maxlength="20" autocomplete="username" required>
-    <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" required>
-    <button type="submit" class="btn btn-primary">Sign in</button>
-  </form>
+    <form id="signup-form" style="display:none;">
+      <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
+      <button type="submit" class="btn btn-primary">Create passkey</button>
+    </form>
+
+    <form id="code-form" style="display:none;">
+      <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+
+    <form id="recovery-form" style="display:none;">
+      <input type="text" id="recovery-user" placeholder="username" maxlength="20" autocomplete="username" required>
+      <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" required>
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+  </div>
 
   <div id="auth-meta">
     <div id="auth-status"></div>
