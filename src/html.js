@@ -1676,50 +1676,35 @@ export const HTML = `<!DOCTYPE html>
     if (isLive) animateMsgEntry(div, autoScroll);
   }
 
-  // Expand the new message from height 0 to its natural height while
-  // pinning the container's scrollTop to the bottom. The growing
-  // max-height pushes existing messages up, producing a smooth scroll-up
-  // effect even though we're really just animating the new node's box.
+  // Fade + translate the new message into place, letting CSS smooth
+  // scroll handle the viewport shift in a single scrollTop assignment.
+  // We deliberately avoid animating max-height here: height transitions
+  // on a flex item re-lay out every sibling on every frame, which
+  // stutters badly once the chat has dozens of messages. Transform and
+  // opacity are compositor-only, so 100 messages cost the same as 5.
   function animateMsgEntry(div, autoScroll) {
-    const targetHeight = div.offsetHeight;
-    if (!targetHeight) return;
-
-    div.style.overflow = 'hidden';
-    div.style.maxHeight = '0px';
+    div.style.willChange = 'transform, opacity';
+    div.style.transform = 'translateY(6px)';
     div.style.opacity = '0';
-    // Force the 0 state to commit before the transition kicks in.
+    // Force the pre-state to commit so the transition actually fires.
     void div.offsetHeight;
-    div.style.transition = 'max-height 110ms ease-out, opacity 110ms ease-out';
-    div.style.maxHeight = targetHeight + 'px';
+    div.style.transition = 'transform 140ms ease-out, opacity 140ms ease-out';
+    div.style.transform = 'translateY(0)';
     div.style.opacity = '1';
 
-    const DURATION = 120;
-    let raf = 0;
-    let prevBehavior;
     if (autoScroll) {
-      // Disable CSS smooth-scroll while we drive scrollTop per-frame —
-      // smooth scrolling on top of a per-frame pin chases its own tail.
-      prevBehavior = messagesDiv.style.scrollBehavior;
-      messagesDiv.style.scrollBehavior = 'auto';
-      const start = performance.now();
-      const tick = (now) => {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        if (now - start < DURATION) raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
+      // #messages has scroll-behavior: smooth, so this one assignment
+      // animates the viewport up to reveal the new (already-full-height)
+      // message — no per-frame layout work required.
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
     setTimeout(() => {
-      if (raf) cancelAnimationFrame(raf);
       div.style.transition = '';
-      div.style.maxHeight = '';
+      div.style.transform = '';
       div.style.opacity = '';
-      div.style.overflow = '';
-      if (autoScroll) {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        messagesDiv.style.scrollBehavior = prevBehavior;
-      }
-    }, DURATION + 20);
+      div.style.willChange = '';
+    }, 160);
   }
 
   // Walk the messages newest-first and populate each .timeline cell
