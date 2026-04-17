@@ -305,10 +305,14 @@ export const HTML = `<!DOCTYPE html>
     max-width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: 2.5em auto 1fr;
+    grid-template-columns: 2.5em 1fr;
     column-gap: 6px;
     align-items: baseline;
   }
+  /* Name + text live in one grid cell so a wrapping text line continues
+     at the username's left edge rather than spilling into the time
+     column on the left. */
+  .msg .body { min-width: 0; }
   /* Subtle hover wash so the message under the cursor reads as the
      active row. Same translucent-white tint used by the input pill,
      dialed down to keep the chat scan-friendly. */
@@ -1005,27 +1009,48 @@ export const HTML = `<!DOCTYPE html>
   #profile-box .toggle-row input { cursor: pointer; }
   #user-modal {
     display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,.6);
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
     align-items: center; justify-content: center;
     z-index: 100;
   }
   #user-modal.open { display: flex; }
+  /* Glass card matching the profile modal: translucent surface, soft
+     border, generous radius, heavy backdrop blur. */
   #user-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
     padding: 20px;
     width: 320px;
     max-width: calc(100vw - 32px);
     display: flex; flex-direction: column; gap: 10px;
     font-size: 13px;
+    position: relative;
   }
-  #user-box h3 { font-size: 13px; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 8px; }
-  #user-box h3 .fp { font-size: 13px; }
+  #user-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  #user-close:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+  #user-box h3 { font-size: 13px; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 8px; padding-right: 28px; }
+  #user-box h3 .fp { font-size: 13px; margin: 0; }
   #user-box dl { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; margin: 0; }
   #user-box dt { color: var(--text-muted); }
   #user-box dd { margin: 0; }
-  #user-box .actions { display: flex; justify-content: flex-end; }
+  #user-box dd.fp { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; user-select: all; }
 
   /* --- Connection status ------------------------------------------------- */
   #conn-status {
@@ -1160,16 +1185,14 @@ export const HTML = `<!DOCTYPE html>
 <!-- User info modal -->
 <div id="user-modal">
   <div id="user-box">
+    <button type="button" id="user-close" aria-label="Close">&times;</button>
     <h3>
       <span id="um-name"></span>
-      <span id="um-fp" class="fp"></span>
     </h3>
     <dl>
+      <dt>ID</dt><dd id="um-fp" class="fp"></dd>
       <dt>Joined</dt><dd id="um-joined"></dd>
     </dl>
-    <div class="actions">
-      <button class="btn" id="user-close">Close</button>
-    </div>
   </div>
 </div>
 
@@ -1477,6 +1500,12 @@ export const HTML = `<!DOCTYPE html>
           const span = document.createElement('span');
           span.className = 'mention';
           span.textContent = m[0];
+          // Mentions wear the mentioned user's name color so the chat
+          // reads as a conversation between identifiable people. Falls
+          // back to the .mention accent color when the user isn't in
+          // knownUsers yet (haven't seen them in this session).
+          const known = knownUsers.get(lower);
+          if (known && known.color) span.style.color = known.color;
           parent.appendChild(span);
           if (myUsername && lower === myUsername.toLowerCase()) {
             mentionedMe = true;
@@ -2242,9 +2271,16 @@ export const HTML = `<!DOCTYPE html>
       if (isLive) playNotification();
     }
 
+    // Wrap name + text in a single grid cell so a wrapping line of
+    // text continues at the username's left edge rather than indenting
+    // into the (narrower) text column or the time column on the left.
+    const body = document.createElement('span');
+    body.className = 'body';
+    body.appendChild(name);
+    body.appendChild(document.createTextNode(' '));
+    body.appendChild(text);
     div.appendChild(timeline);
-    div.appendChild(name);
-    div.appendChild(text);
+    div.appendChild(body);
     messagesDiv.appendChild(div);
     messageCount++;
 
