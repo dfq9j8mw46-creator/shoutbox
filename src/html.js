@@ -24,7 +24,7 @@ export const HTML = `<!DOCTYPE html>
     display: flex;
     flex-direction: column;
   }
-  pre, code, kbd, samp, #color-hex, #vm-recipe, #verify-box dd {
+  pre, code, kbd, samp, #vm-recipe, #verify-box dd {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
@@ -185,24 +185,46 @@ export const HTML = `<!DOCTYPE html>
   }
   .msg .text { color: var(--text); }
 
-  /* --- Input bar --------------------------------------------------------- */
+  /* --- Floating input bar ----------------------------------------------- */
+  /* The input-bar no longer has its own surface; it's just a spacer that
+     centers the floating #input-wrap above the chat background. */
   #input-bar {
-    display: flex;
     padding: 8px 12px;
-    gap: 8px;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
     flex-shrink: 0;
     position: relative;
   }
-  /* Icon buttons inside the input bar match the text input's box: same
-     border, radius, and vertical padding so all three elements align. */
-  #input-bar .btn {
-    padding: 8px;
+  #input-wrap {
+    position: relative;
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
   }
-  #input-bar #send-btn { border-color: var(--accent); }
+  #input-wrap:focus-within { border-color: var(--accent); }
+  #input-wrap #msg-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 8px 16px;
+    font-size: 14px;
+    outline: none;
+  }
+  #input-wrap #msg-input::placeholder { color: var(--text-muted); }
+  /* Send button sits inside the pill on the right and only shows once
+     the user has typed something. Toggled via [data-empty] on #input-wrap. */
+  #input-wrap #send-btn {
+    margin: 4px;
+    border: none;
+    border-radius: 999px;
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
 
   /* --- @mention autocomplete -------------------------------------------- */
   #mention-suggest {
@@ -238,18 +260,6 @@ export const HTML = `<!DOCTYPE html>
     margin-left: auto;
   }
   .mention-item.active, .mention-item:hover { background: var(--border); }
-  #msg-input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 10px;
-    border-radius: 4px;
-    font-size: 14px;
-    outline: none;
-  }
-  #msg-input:focus { border-color: var(--accent); }
-  #msg-input::placeholder { color: var(--text-muted); }
 
   /* --- Auth screen ------------------------------------------------------- */
   #auth-screen {
@@ -340,7 +350,6 @@ export const HTML = `<!DOCTYPE html>
   #email-value { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #email-value:empty::before { content: 'None'; color: var(--text-muted); }
   #email-actions { display: flex; gap: 4px; }
-  #email-actions .btn { padding: 3px 8px; font-size: 11px; }
   #email-form { display: flex; flex-direction: column; gap: 6px; }
   #email-new-input {
     background: var(--bg);
@@ -361,7 +370,6 @@ export const HTML = `<!DOCTYPE html>
     font-size: 12px;
   }
   .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pk-row .btn { padding: 3px 8px; font-size: 11px; }
 
   #auth-form, #code-form { display: flex; gap: 8px; }
   #auth-form input, #code-form input {
@@ -439,13 +447,10 @@ export const HTML = `<!DOCTYPE html>
     align-items: center;
     gap: 8px;
   }
-  /* The generic #profile-box input[type="text"] rule forces width: 100%,
-     which breaks the flex layout. Switch these to flex-basis inside
-     .color-row so username grows into the remaining space and the hex /
-     swatch stay their fixed sizes. */
+  /* Username input grows into the remaining width; the color swatch
+     stays a fixed square next to it. */
   .color-row input[type="text"] { width: auto; }
   .color-row #username-input { flex: 1; min-width: 0; font-weight: 600; }
-  .color-row #color-hex { flex: 0 0 90px; }
   .color-row #color-input { flex: 0 0 40px; }
   #color-input {
     height: 32px;
@@ -455,16 +460,6 @@ export const HTML = `<!DOCTYPE html>
     background: var(--bg);
     padding: 2px;
   }
-  #color-hex {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-family: monospace;
-    outline: none;
-  }
   #color-warn {
     margin-top: 4px;
     font-size: 11px;
@@ -473,9 +468,12 @@ export const HTML = `<!DOCTYPE html>
   }
   #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   #profile-box .actions .spacer { flex: 1; }
-  /* Save is the only footer button now — make it fill the row so it doesn't
-     look stranded on its own line. */
-  #profile-save { width: 100%; padding: 8px; font-size: 13px; }
+  /* All buttons inside the profile modal share a single height so the
+     stack reads cleanly; icon-only buttons use equal padding to stay
+     square. Save fills the row as the sole footer action. */
+  #profile-box .btn { padding: 6px 10px; font-size: 12px; line-height: 1.35; }
+  #profile-box .btn.icon-btn { padding: 7px; }
+  #profile-save { width: 100%; }
   .btn-danger { background: #5a1f1f; color: #f5bebe; }
   .btn-danger:hover { background: #7a2a2a; }
 
@@ -655,10 +653,12 @@ export const HTML = `<!DOCTYPE html>
       </div>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
-        <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
-        <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-        </button>
+        <div id="input-wrap">
+          <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
+          <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send" style="display:none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -711,8 +711,7 @@ export const HTML = `<!DOCTYPE html>
       <label for="username-input">Username</label>
       <div class="color-row">
         <input type="text" id="username-input" maxlength="20" pattern="[a-zA-Z0-9_\\-]+">
-        <input type="text" id="color-hex" maxlength="7" placeholder="#5b8def">
-        <input type="color" id="color-input">
+        <input type="color" id="color-input" title="Pick a color">
       </div>
       <div id="color-warn"></div>
     </div>
@@ -725,8 +724,12 @@ export const HTML = `<!DOCTYPE html>
       <div id="email-current">
         <span id="email-value"></span>
         <span id="email-actions">
-          <button class="btn" id="email-change-btn" type="button">Change</button>
-          <button class="btn" id="email-remove-btn" type="button">Remove</button>
+          <button class="btn icon-btn" id="email-change-btn" type="button" title="Change email" aria-label="Change email">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="btn btn-danger icon-btn" id="email-remove-btn" type="button" title="Remove email" aria-label="Remove email">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          </button>
           <button class="btn" id="email-add-btn" type="button">Add email</button>
         </span>
       </div>
@@ -807,7 +810,6 @@ export const HTML = `<!DOCTYPE html>
   const profileFp   = document.getElementById('profile-fp');
   const usernameInput = document.getElementById('username-input');
   const colorInput  = document.getElementById('color-input');
-  const colorHex    = document.getElementById('color-hex');
   const colorWarn    = document.getElementById('color-warn');
   const profileSave = document.getElementById('profile-save');
   const profileClose = document.getElementById('profile-close');
@@ -934,6 +936,7 @@ export const HTML = `<!DOCTYPE html>
     msgInput.setSelectionRange(pos, pos);
     hideSuggest();
     msgInput.focus();
+    if (typeof updateSendVisibility === 'function') updateSendVisibility();
   }
 
   function playNotification() {
@@ -1448,7 +1451,14 @@ export const HTML = `<!DOCTYPE html>
     if (!text || !ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({ type: 'msg', text }));
     msgInput.value = '';
+    updateSendVisibility();
     msgInput.focus();
+  }
+
+  // Send button only appears once the user has typed something. Trim so
+  // whitespace alone doesn't count.
+  function updateSendVisibility() {
+    sendBtn.style.display = msgInput.value.trim() ? '' : 'none';
   }
 
   sendBtn.addEventListener('click', sendMsg);
@@ -1482,7 +1492,7 @@ export const HTML = `<!DOCTYPE html>
       sendMsg();
     }
   });
-  msgInput.addEventListener('input', updateSuggest);
+  msgInput.addEventListener('input', () => { updateSuggest(); updateSendVisibility(); });
   msgInput.addEventListener('click', updateSuggest);
   msgInput.addEventListener('keyup', (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') updateSuggest();
@@ -1516,8 +1526,10 @@ export const HTML = `<!DOCTYPE html>
         id.className = 'pk-id';
         id.textContent = (p.createdAt ? new Date(p.createdAt).toLocaleDateString() + ' · ' : '') + (p.id.slice(0, 12) + '…');
         const del = document.createElement('button');
-        del.className = 'btn btn-danger';
-        del.textContent = 'Remove';
+        del.className = 'btn btn-danger icon-btn';
+        del.title = 'Remove passkey';
+        del.setAttribute('aria-label', 'Remove passkey');
+        del.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
         del.addEventListener('click', async () => {
           if (!confirm('Remove this passkey? You can still sign in with other passkeys or recovery codes.')) return;
           const r = await fetch('/auth/passkeys/delete', {
@@ -1689,7 +1701,6 @@ export const HTML = `<!DOCTYPE html>
   function openProfileModal() {
     usernameInput.value = myUsername;
     colorInput.value = myColor.startsWith('#') ? myColor : '#5b8def';
-    colorHex.value = colorInput.value;
     usernameInput.style.color = colorInput.value;
     notifyToggle.checked = notifyOn;
     profileJoined.textContent = myCreatedAt
@@ -1751,24 +1762,14 @@ export const HTML = `<!DOCTYPE html>
     return (hi + 0.05) / (lo + 0.05);
   }
   function updateColorWarn() {
-    const v = colorHex.value;
+    const v = colorInput.value;
     if (!/^#[0-9a-fA-F]{6}$/.test(v)) { colorWarn.textContent = ''; return; }
     const r = contrastRatio(v, BG_HEX);
     colorWarn.textContent = r >= MIN_CONTRAST ? '' : 'Too close to background (' + r.toFixed(1) + ':1). Pick something lighter.';
   }
 
   colorInput.addEventListener('input', () => {
-    colorHex.value = colorInput.value;
     usernameInput.style.color = colorInput.value;
-    updateColorWarn();
-  });
-
-  colorHex.addEventListener('input', () => {
-    const v = colorHex.value;
-    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
-      colorInput.value = v;
-      usernameInput.style.color = v;
-    }
     updateColorWarn();
   });
 
@@ -1783,7 +1784,7 @@ export const HTML = `<!DOCTYPE html>
 
   profileSave.addEventListener('click', async () => {
     const username = usernameInput.value.trim();
-    const color = colorHex.value.trim();
+    const color = colorInput.value.trim();
     if (!username || !/^[a-zA-Z0-9_\\-]{1,20}$/.test(username)) {
       alert('Username: 1-20 chars, letters/numbers/_/-');
       return;
