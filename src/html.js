@@ -317,8 +317,10 @@ export const HTML = `<!DOCTYPE html>
   .msg .text {
     color: var(--text);
     min-width: 0;
+    /* overflow-wrap: anywhere handles long URLs and runs without breaking
+       inside ordinary words on narrow viewports (word-break: break-all
+       did, which made prose ugly on mobile). */
     overflow-wrap: anywhere;
-    word-break: break-all;
   }
 
   /* --- Floating input bar ----------------------------------------------- */
@@ -1008,6 +1010,10 @@ export const HTML = `<!DOCTYPE html>
   let suggestItems = [];
   let suggestIdx = 0;
   let suggestToken = null;
+  // Track the messages list length so the 100-message DOM cap doesn't
+  // walk the full list with querySelectorAll on every incoming message.
+  let messageCount = 0;
+  const MAX_VISIBLE_MESSAGES = 100;
 
   function addKnownUser(username, color, online) {
     if (!username) return;
@@ -1130,7 +1136,7 @@ export const HTML = `<!DOCTYPE html>
   // in one message.
   const MAX_MENTIONS = 5;
   function renderMessageText(parent, text) {
-    const re = /(https?:\\/\\/[^\\s<>"'()]+[^\\s<>"'().,!?;:])|@([a-zA-Z0-9_\\-]{1,20})/g;
+    const re = /(https?:\\/\\/[^\\s<>"'()]+[^\\s<>"'().,!?;:])|@([a-zA-Z0-9_\\-]{1,20})/gi;
     let last = 0;
     let mentionedMe = false;
     const seenMentions = new Set();
@@ -1206,6 +1212,10 @@ export const HTML = `<!DOCTYPE html>
   function showAuth() {
     isAuthed = false;
     resetConnectionState();
+    // Reset any height the iOS visualViewport pin wrote onto chatScreen;
+    // otherwise the stale inline height lingers on the hidden element and
+    // can leak back in on a subsequent sign-in before pin() re-fires.
+    chatScreen.style.height = '';
     authScreen.style.display = 'flex';
     chatScreen.style.display = 'none';
     try { showAuthForm('primary'); } catch {}
@@ -1534,6 +1544,7 @@ export const HTML = `<!DOCTYPE html>
 
       if (data.type === 'history') {
         messagesDiv.innerHTML = '';
+        messageCount = 0;
         data.messages.forEach((m) => appendMsg(m, false));
         refreshTimestamps();
         scrollBottom();
@@ -1635,12 +1646,15 @@ export const HTML = `<!DOCTYPE html>
     div.appendChild(name);
     div.appendChild(text);
     messagesDiv.appendChild(div);
+    messageCount++;
 
-    // Keep DOM limited to 100 messages.
-    while (messagesDiv.querySelectorAll('.msg').length > 100) {
+    // Keep DOM limited to MAX_VISIBLE_MESSAGES. Using the tracked counter
+    // avoids re-scanning the message list on every append.
+    while (messageCount > MAX_VISIBLE_MESSAGES) {
       const first = messagesDiv.firstElementChild;
       if (!first) break;
       first.remove();
+      messageCount--;
     }
   }
 
@@ -1650,6 +1664,7 @@ export const HTML = `<!DOCTYPE html>
   // run of five messages at "15h ago" shows the label on the last
   // (newest) of the run, with the four older cells left blank.
   function refreshTimestamps() {
+    if (messageCount === 0) return;
     const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
     let nextLabel = null;
     for (let i = msgs.length - 1; i >= 0; i--) {
@@ -2107,6 +2122,10 @@ export const HTML = `<!DOCTYPE html>
   const umJoined  = document.getElementById('um-joined');
   const userClose = document.getElementById('user-close');
 
+  // Bumped on every open (and close) so a late /user/... response from a
+  // prior click can't overwrite the modal with stale data when the user
+  // has already clicked someone else or dismissed the dialog.
+  let userModalToken = 0;
   async function showUser(username) {
     // Clicking your own name opens the editable profile modal instead
     // of the read-only user-info modal.
@@ -2114,6 +2133,7 @@ export const HTML = `<!DOCTYPE html>
       openProfileModal();
       return;
     }
+    const token = ++userModalToken;
     umName.textContent = username;
     umName.style.color = '';
     umFp.textContent = '';
@@ -2121,8 +2141,10 @@ export const HTML = `<!DOCTYPE html>
     userModal.classList.add('open');
     try {
       const res = await fetch('/user/' + encodeURIComponent(username));
+      if (token !== userModalToken) return;
       if (!res.ok) { umJoined.textContent = 'Unknown user'; return; }
       const u = await res.json();
+      if (token !== userModalToken) return;
       umName.style.color = u.color || '';
       umFp.textContent = u.fingerprint ? '#' + u.fingerprint : '';
       if (u.created_at) {
@@ -2132,12 +2154,17 @@ export const HTML = `<!DOCTYPE html>
         umJoined.textContent = '-';
       }
     } catch {
+      if (token !== userModalToken) return;
       umJoined.textContent = 'Network error';
     }
   }
-  userClose.addEventListener('click', () => userModal.classList.remove('open'));
+  function closeUserModal() {
+    userModalToken++;
+    userModal.classList.remove('open');
+  }
+  userClose.addEventListener('click', closeUserModal);
   userModal.addEventListener('click', (e) => {
-    if (e.target === userModal) userModal.classList.remove('open');
+    if (e.target === userModal) closeUserModal();
   });
   document.addEventListener('click', (e) => {
     const el = e.target.closest('.clickable-name');
@@ -2205,7 +2232,15 @@ export const HTML = `<!DOCTYPE html>
       }
       const li = buildUserLi(u);
       li.classList.add('entering');
-      usersList.appendChild(li);
+      // Signed-in user always renders first; placing them at the head on
+      // creation (rather than appending and then moving) means the
+      // entering animation plays from their final position instead of
+      // getting reshuffled mid-transition.
+      if (u.username === myUsername) {
+        usersList.insertBefore(li, usersList.firstChild);
+      } else {
+        usersList.appendChild(li);
+      }
       userLiByName.set(u.username, li);
       // Two rAFs so the browser commits the 'entering' state before we
       // remove the class — otherwise the transition is skipped.
@@ -2214,8 +2249,9 @@ export const HTML = `<!DOCTYPE html>
       });
     }
 
-    // Always render the signed-in user first so they can spot themselves
-    // without scanning the list.
+    // Re-pin the own-user row to the head if it's still somewhere else
+    // (e.g., it was created before myUsername resolved, or the row was
+    // pre-existing and something else snuck in ahead of it).
     const ownLi = myUsername ? userLiByName.get(myUsername) : null;
     if (ownLi && usersList.firstChild !== ownLi) {
       usersList.insertBefore(ownLi, usersList.firstChild);
@@ -2263,13 +2299,28 @@ export const HTML = `<!DOCTYPE html>
     updateUserOverflow();
   });
 
-  window.addEventListener('resize', updateUserOverflow);
+  // rAF-throttle resize so a stream of events during window/keyboard
+  // animations collapses to one updateUserOverflow call per frame —
+  // each call does a getBoundingClientRect sweep across every pill.
+  let overflowRaf = 0;
+  window.addEventListener('resize', () => {
+    if (overflowRaf) return;
+    overflowRaf = requestAnimationFrame(() => {
+      overflowRaf = 0;
+      updateUserOverflow();
+    });
+  });
 
   // Rebuild the timeline dividers once a second so labels age in place
   // and groups re-coalesce as adjacent messages fall into the same
   // relative-time bucket (e.g. two messages previously at 119s and 118s
-  // merge into a single "2m ago" group after the next tick).
-  setInterval(refreshTimestamps, 1000);
+  // merge into a single "2m ago" group after the next tick). Skip the
+  // work when the tab is hidden — the user isn't looking, and we'll
+  // catch up on the next tick once it's foregrounded.
+  setInterval(() => {
+    if (document.hidden) return;
+    refreshTimestamps();
+  }, 1000);
 
   // Pin the chat screen to the actual visual viewport height so iOS
   // Safari keeps the input bar flush with the top of the keyboard

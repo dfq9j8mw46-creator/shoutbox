@@ -49,7 +49,8 @@ function isSecureRequest(request, env) {
 // (localhost) or DEV_MODE is explicitly set. This prevents a production deploy
 // with no email provider from becoming an open auth bypass.
 function isDev(request, env) {
-  if (env.DEV_MODE === 'true') return true;
+  const devMode = (env.DEV_MODE || '').trim().toLowerCase();
+  if (devMode && devMode !== 'false' && devMode !== '0' && devMode !== 'no') return true;
   const host = (request.headers.get('Host') || '').toLowerCase().split(':')[0];
   return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
 }
@@ -284,21 +285,68 @@ async function hashEmailKey(secret, email) {
   return (await hmac(secret, 'email:' + email.toLowerCase())).slice(0, 32);
 }
 
+// Store magic-link tokens under HMAC(token) instead of the token itself so a
+// KV dump during the 10-minute TTL window can't map a token to an email —
+// matches the treatment we already give the 6-digit code path.
+async function hashKvToken(secret, kind, token) {
+  return (await hmac(secret, kind + ':' + token)).slice(0, 32);
+}
+
+function parseEmailIndexValue(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.owner) return parsed;
+  } catch {}
+  return { owner: raw, email: null };
+}
+
+// Reverse index: ownerEmails:${ownerId} → JSON array of the emails this owner
+// claims. Maintained in lockstep with emailIndex:* by put/delete below so the
+// common "what does this account own?" question is an O(1) KV read instead of
+// a full emailIndex scan.
+async function getOwnerEmailsCached(env, ownerId) {
+  const raw = await env.KV.get(`ownerEmails:${ownerId}`);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function addOwnerEmail(env, ownerId, email) {
+  email = email.toLowerCase();
+  const current = (await getOwnerEmailsCached(env, ownerId)) || [];
+  if (current.includes(email)) return;
+  current.push(email);
+  await env.KV.put(`ownerEmails:${ownerId}`, JSON.stringify(current));
+}
+
+async function removeOwnerEmail(env, ownerId, email) {
+  email = email.toLowerCase();
+  const current = await getOwnerEmailsCached(env, ownerId);
+  if (!current) return;
+  const next = current.filter((e) => e !== email);
+  if (next.length === current.length) return;
+  if (next.length === 0) await env.KV.delete(`ownerEmails:${ownerId}`);
+  else await env.KV.put(`ownerEmails:${ownerId}`, JSON.stringify(next));
+}
+
 async function getOwnerByEmail(env, secret, email) {
   email = email.toLowerCase();
   const hashed = await hashEmailKey(secret, email);
   const hashedRaw = await env.KV.get(`emailIndex:${hashed}`);
   if (hashedRaw) {
-    try {
-      const parsed = JSON.parse(hashedRaw);
-      if (parsed && typeof parsed === 'object' && parsed.owner) return parsed.owner;
-    } catch {}
-    return hashedRaw;
+    const parsed = parseEmailIndexValue(hashedRaw);
+    return parsed ? parsed.owner : null;
   }
   const legacy = await env.KV.get(`emailIndex:${email}`);
   if (legacy) {
     await env.KV.put(`emailIndex:${hashed}`, JSON.stringify({ owner: legacy, email }));
     await env.KV.delete(`emailIndex:${email}`);
+    await addOwnerEmail(env, legacy, email);
     return legacy;
   }
   return null;
@@ -307,19 +355,35 @@ async function getOwnerByEmail(env, secret, email) {
 async function putEmailIndex(env, secret, email, ownerId) {
   email = email.toLowerCase();
   const hashed = await hashEmailKey(secret, email);
+  // Detect ownership transfer so we can drop the reverse-index pointer on
+  // the prior owner instead of stranding it.
+  const priorParsed = parseEmailIndexValue(await env.KV.get(`emailIndex:${hashed}`));
+  const priorOwner = priorParsed ? priorParsed.owner : null;
   await env.KV.put(`emailIndex:${hashed}`, JSON.stringify({ owner: ownerId, email }));
-  // Scrub any legacy plaintext entry that might still exist.
   await env.KV.delete(`emailIndex:${email}`);
+  if (priorOwner && priorOwner !== ownerId) {
+    await removeOwnerEmail(env, priorOwner, email);
+  }
+  await addOwnerEmail(env, ownerId, email);
 }
 
 async function deleteEmailIndexByEmail(env, secret, email) {
   email = email.toLowerCase();
   const hashed = await hashEmailKey(secret, email);
+  const existing = parseEmailIndexValue(await env.KV.get(`emailIndex:${hashed}`))
+    || parseEmailIndexValue(await env.KV.get(`emailIndex:${email}`));
   await env.KV.delete(`emailIndex:${hashed}`);
   await env.KV.delete(`emailIndex:${email}`);
+  if (existing && existing.owner) {
+    await removeOwnerEmail(env, existing.owner, email);
+  }
 }
 
 async function listOwnedEmails(env, ownerId) {
+  const cached = await getOwnerEmailsCached(env, ownerId);
+  if (cached) return cached;
+  // No reverse-index entry yet (legacy data or a passkey-only account):
+  // scan forward index once and backfill so subsequent calls are O(1).
   const prefix = 'emailIndex:';
   let cursor = undefined;
   const emails = [];
@@ -343,7 +407,11 @@ async function listOwnedEmails(env, ownerId) {
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
-  return [...new Set(emails)];
+  const unique = [...new Set(emails)];
+  if (unique.length) {
+    await env.KV.put(`ownerEmails:${ownerId}`, JSON.stringify(unique));
+  }
+  return unique;
 }
 
 async function rewriteOwnedEmailIndexes(env, secret, ownerId, keepEmails = [], nextOwnerId = ownerId) {
@@ -809,7 +877,8 @@ async function handleRequest(request, env) {
 
       // Link mode
       const token = crypto.randomUUID() + crypto.randomUUID();
-      await env.KV.put(`magic:${token}`, email, { expirationTtl: 600 });
+      const tokenHash = await hashKvToken(secret, 'magic', token);
+      await env.KV.put(`magic:${tokenHash}`, email, { expirationTtl: 600 });
 
       const base = env.BASE_URL || url.origin;
       const link = `${base}/auth/verify?token=${token}`;
@@ -1227,14 +1296,23 @@ async function handleRequest(request, env) {
       const token = url.searchParams.get('token');
       if (!token) return json({ error: 'Missing token' }, 400);
 
-      const email = await env.KV.get(`magic:${token}`);
+      const tokenHash = await hashKvToken(secret, 'magic', token);
+      let email = await env.KV.get(`magic:${tokenHash}`);
+      if (email) {
+        await env.KV.delete(`magic:${tokenHash}`);
+      } else {
+        // Transitional fallback for any plaintext-keyed tokens still in
+        // flight from before we started hashing keys. Safe to drop 10
+        // minutes (the TTL) after deploy.
+        email = await env.KV.get(`magic:${token}`);
+        if (email) await env.KV.delete(`magic:${token}`);
+      }
       if (!email) {
         return new Response('Invalid or expired link. <a href="/">Try again</a>', {
           status: 400,
           headers: { 'Content-Type': 'text/html' },
         });
       }
-      await env.KV.delete(`magic:${token}`);
 
       const ownerId = await resolveOwnerIdForEmail(env, secret, email);
       const sid = await createSession(env, ownerId, secret);
@@ -1253,10 +1331,14 @@ async function handleRequest(request, env) {
       if (!sid) return json({ error: 'Not signed in' }, 401);
       const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
-      const passkeyCount = (await listCredentialIds(env, session.email)).length;
-      // Email can be changed/removed independently of the ownerId, so the
-      // current value lives on the profile record.
-      const profile = await loadOrCreateProfile(env, session.email, secret);
+      // Profile (for email/created_at) and credential list are independent KV
+      // reads — fan them out so the boot-path /auth/me call doesn't serialize
+      // two round-trips.
+      const [profile, credIds] = await Promise.all([
+        loadOrCreateProfile(env, session.email, secret),
+        listCredentialIds(env, session.email),
+      ]);
+      const passkeyCount = credIds.length;
       const email = profile.email || null;
       return json({
         username: session.username,
@@ -1311,8 +1393,9 @@ async function handleRequest(request, env) {
       }
 
       const token = crypto.randomUUID() + crypto.randomUUID();
+      const tokenHash = await hashKvToken(secret, 'emailChange', token);
       await env.KV.put(
-        `emailChange:${token}`,
+        `emailChange:${tokenHash}`,
         JSON.stringify({ ownerId, email: newEmail }),
         { expirationTtl: 600 },
       );
@@ -1349,14 +1432,22 @@ async function handleRequest(request, env) {
       const token = url.searchParams.get('token');
       if (!token) return json({ error: 'Missing token' }, 400);
 
-      const raw = await env.KV.get(`emailChange:${token}`);
+      const tokenHash = await hashKvToken(secret, 'emailChange', token);
+      let raw = await env.KV.get(`emailChange:${tokenHash}`);
+      if (raw) {
+        await env.KV.delete(`emailChange:${tokenHash}`);
+      } else {
+        // Transitional fallback for plaintext-keyed tokens issued before
+        // we switched to hashed keys. Safe to drop 10 minutes after deploy.
+        raw = await env.KV.get(`emailChange:${token}`);
+        if (raw) await env.KV.delete(`emailChange:${token}`);
+      }
       if (!raw) {
         return new Response('Invalid or expired link. <a href="/">Return to chat</a>', {
           status: 400,
           headers: { 'Content-Type': 'text/html' },
         });
       }
-      await env.KV.delete(`emailChange:${token}`);
       const { ownerId, email: newEmail } = JSON.parse(raw);
 
       const profileRaw = await env.KV.get(`profile:${ownerId}`);
@@ -1455,6 +1546,8 @@ async function handleRequest(request, env) {
       const currentProfile = await loadOrCreateProfile(env, session.email, secret);
       const body = await request.json().catch(() => ({}));
 
+      let changed = false;
+
       if (body.username !== undefined) {
         const u = (body.username || '').trim().slice(0, 20);
         if (!USERNAME_RE.test(u)) {
@@ -1472,6 +1565,7 @@ async function handleRequest(request, env) {
           await env.KV.put(`username:${u}`, session.email);
           await deleteUsernameIfOwned(env, currentProfile.username || session.username, session.email);
           session.username = u;
+          changed = true;
         }
       }
       if (body.color !== undefined) {
@@ -1482,10 +1576,23 @@ async function handleRequest(request, env) {
         // Only enforce contrast when the user actually changed the color, so
         // pre-existing low-contrast accounts aren't blocked from unrelated
         // profile saves.
-        if (c.toLowerCase() !== String(session.color || '').toLowerCase() && !hasEnoughContrast(c)) {
-          return json({ error: 'Color is too close to the background - pick something lighter' }, 400);
+        if (c.toLowerCase() !== String(session.color || '').toLowerCase()) {
+          if (!hasEnoughContrast(c)) {
+            return json({ error: 'Color is too close to the background - pick something lighter' }, 400);
+          }
+          session.color = c;
+          changed = true;
         }
-        session.color = c;
+      }
+
+      // No-op save: skip the profile write, session fan-out, and DO sync so
+      // repeated Save clicks (or stale client retries) don't churn KV.
+      if (!changed) {
+        return json({
+          username: session.username,
+          color: session.color,
+          fingerprint: session.fingerprint,
+        });
       }
 
       const nextProfile = {
