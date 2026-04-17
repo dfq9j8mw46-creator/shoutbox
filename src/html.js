@@ -42,11 +42,11 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
   }
 
-  /* Subtle "Shoutbox · build xxx" status line sitting on the chat
-     background just above the online-users strip. Clicking it opens the
-     build-provenance modal. */
+  /* Subtle "Shoutbox · build xxx" label sitting on the chat background,
+     right-aligned just above the online-users strip. Clicking it opens
+     the build-provenance modal. */
   #status-line {
-    text-align: center;
+    text-align: right;
     padding: 4px 12px 0;
     font-size: 11px;
     color: var(--text-muted);
@@ -59,14 +59,15 @@ export const HTML = `<!DOCTYPE html>
   }
   #status-line a:hover { color: var(--text); }
 
-  /* Horizontal strip of online users. Scrolls if the list overflows. */
+  /* Horizontal strip of online users. Scrolls if the list overflows. We
+     use per-item margin-right rather than flex gap so the spacing can
+     collapse as part of the leave animation. */
   #users-list {
     list-style: none;
     margin: 0;
     padding: 6px 12px;
     display: flex;
     flex-direction: row;
-    gap: 12px;
     overflow-x: auto;
     flex-shrink: 0;
   }
@@ -75,6 +76,22 @@ export const HTML = `<!DOCTYPE html>
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+    max-width: 200px;
+    margin-right: 12px;
+    transition: transform 260ms ease, opacity 220ms ease,
+                max-width 260ms ease, margin-right 260ms ease;
+  }
+  #users-list li:last-child { margin-right: 0; }
+  /* Joining: start below the bar (translateY down) with no opacity, then
+     slide up into place. Leaving reverses that and also collapses the
+     item's width + margin so neighbors close the gap smoothly. */
+  #users-list li.entering { transform: translateY(120%); opacity: 0; }
+  #users-list li.leaving {
+    transform: translateY(120%);
+    opacity: 0;
+    max-width: 0;
+    margin-right: 0;
   }
   /* Fingerprint sits next to the name in the dropdown/modal contexts; in
      the compact horizontal strip it's noise — let the click-to-open user
@@ -122,6 +139,11 @@ export const HTML = `<!DOCTYPE html>
     gap: 2px;
     scroll-behavior: smooth;
   }
+  /* Stack messages from the bottom: when the list is shorter than the
+     viewport, margin-top:auto pushes everything down. When it's taller
+     and scrolls, flex collapses the auto margin so normal scrolling
+     behavior wins. */
+  #messages > *:first-child { margin-top: auto; }
   .msg {
     font-size: 13px;
     line-height: 1.45;
@@ -612,7 +634,7 @@ export const HTML = `<!DOCTYPE html>
       <div id="conn-status">Reconnecting...</div>
       <div id="messages"></div>
       <div id="status-line">
-        <a id="build-badge" href="#" title="Click to verify this build">Shoutbox</a>
+        <a id="build-badge" href="#" title="Click to verify this build">SB</a>
       </div>
       <ul id="users-list"></ul>
       <div id="input-bar">
@@ -1801,7 +1823,7 @@ export const HTML = `<!DOCTYPE html>
       versionInfo = await res.json();
       const sha = versionInfo.commit || 'unknown';
       const short = sha === 'dev' ? 'dev' : sha.slice(0, 7);
-      buildBadge.textContent = 'Shoutbox \u00B7 build ' + short;
+      buildBadge.textContent = 'SB ' + short;
     } catch {}
   }
 
@@ -1868,25 +1890,68 @@ export const HTML = `<!DOCTYPE html>
     if (el && el.dataset.username) showUser(el.dataset.username);
   });
 
-  // --- Online users panel ---
+  // --- Online users strip (animated) ---
+  // Keep a username -> li map so successive 'online' events diff against
+  // the current DOM instead of rebuilding it. That lets us slide arrivals
+  // up from behind the chat bar and slide departures back into it
+  // without interrupting unrelated rows.
+  const userLiByName = new Map();
+
+  function buildUserLi(u) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'clickable-name';
+    name.style.color = u.color || '';
+    name.textContent = u.username;
+    name.dataset.username = u.username;
+    li.appendChild(name);
+    if (u.fingerprint) {
+      const fp = document.createElement('span');
+      fp.className = 'fp';
+      fp.textContent = '#' + u.fingerprint;
+      li.appendChild(fp);
+    }
+    return li;
+  }
+
   function renderUsers(users) {
-    usersList.innerHTML = '';
-    const sorted = users.slice().sort((a, b) => a.username.localeCompare(b.username));
-    for (const u of sorted) {
-      const li = document.createElement('li');
-      const name = document.createElement('span');
-      name.className = 'clickable-name';
-      name.style.color = u.color;
-      name.textContent = u.username;
-      name.dataset.username = u.username;
-      li.appendChild(name);
-      if (u.fingerprint) {
-        const fp = document.createElement('span');
-        fp.className = 'fp';
-        fp.textContent = '#' + u.fingerprint;
-        li.appendChild(fp);
+    const incoming = new Set(users.map((u) => u.username));
+
+    // Users no longer online: start the leave animation, then remove
+    // once it finishes. If they reappear in the meantime, we reuse the
+    // element and cancel the removal.
+    for (const [name, li] of userLiByName) {
+      if (incoming.has(name)) {
+        if (li.classList.contains('leaving')) li.classList.remove('leaving');
+        continue;
       }
+      if (li.classList.contains('leaving')) continue;
+      li.classList.add('leaving');
+      setTimeout(() => {
+        if (!li.classList.contains('leaving')) return;
+        li.remove();
+        userLiByName.delete(name);
+      }, 300);
+    }
+
+    // Users in the new list: update color on existing rows, or create
+    // fresh ones and trigger the entering transition.
+    for (const u of users) {
+      const existing = userLiByName.get(u.username);
+      if (existing) {
+        const nameEl = existing.querySelector('.clickable-name');
+        if (nameEl) nameEl.style.color = u.color || '';
+        continue;
+      }
+      const li = buildUserLi(u);
+      li.classList.add('entering');
       usersList.appendChild(li);
+      userLiByName.set(u.username, li);
+      // Two rAFs so the browser commits the 'entering' state before we
+      // remove the class — otherwise the transition is skipped.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => li.classList.remove('entering'));
+      });
     }
   }
 
