@@ -1594,19 +1594,20 @@ export const HTML = `<!DOCTYPE html>
     }
   }
 
-  // Walk the messages in DOM order and populate each .timeline cell
-  // only when its label differs from the previous message's. Runs of
-  // messages sharing a bucket ("15h ago") show the label once at the
-  // top of the run and leave subsequent cells blank — a left-column
-  // timeline rather than a per-message timestamp.
+  // Walk the messages newest-first and populate each .timeline cell
+  // only when its label differs from its next-newer neighbor's. That
+  // anchors the label on the most recent message of each bucket: a
+  // run of five messages at "15h ago" shows the label on the last
+  // (newest) of the run, with the four older cells left blank.
   function refreshTimestamps() {
     const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
-    let prevLabel = null;
-    for (const msg of msgs) {
+    let nextLabel = null;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const msg = msgs[i];
       const label = formatRelativeTime(Number(msg.dataset.ts));
       const timeline = msg.querySelector('.timeline');
-      if (timeline) timeline.textContent = label !== prevLabel ? label : '';
-      prevLabel = label;
+      if (timeline) timeline.textContent = label !== nextLabel ? label : '';
+      nextLabel = label;
     }
   }
 
