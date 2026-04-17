@@ -145,7 +145,7 @@ export const HTML = `<!DOCTYPE html>
      blur. Messages that scroll behind the pill stay readable but
      softened, tying the top and bottom bars together visually. */
   #users-list li {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -189,7 +189,7 @@ export const HTML = `<!DOCTYPE html>
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     padding: 4px 10px;
     border-radius: 999px;
@@ -223,7 +223,7 @@ export const HTML = `<!DOCTYPE html>
     color: var(--text);
     padding: 5px 10px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
   }
   .btn:hover { background: #333; }
@@ -274,13 +274,13 @@ export const HTML = `<!DOCTYPE html>
     max-width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: 3.5em auto 1fr;
+    grid-template-columns: 5em auto 1fr;
     column-gap: 6px;
     align-items: baseline;
   }
   .msg .timeline {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 13px;
     text-align: right;
     white-space: nowrap;
     user-select: none;
@@ -387,7 +387,7 @@ export const HTML = `<!DOCTYPE html>
   }
   .mention-item .m-name { font-weight: 600; }
   .mention-item .m-badge {
-    font-size: 10px;
+    font-size: 13px;
     color: var(--text-muted);
     margin-left: auto;
   }
@@ -402,14 +402,14 @@ export const HTML = `<!DOCTYPE html>
     flex-direction: column;
     gap: 16px;
   }
-  #auth-screen h2 { font-size: 20px; font-weight: 600; }
+  #auth-screen h2 { font-size: 13px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
   #auth-primary { display: flex; gap: 8px; }
   #auth-primary .btn { padding: 8px 14px; font-size: 13px; }
   #email-plea {
     max-width: 320px;
     color: #ff6b6b;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
     text-align: center;
     border: 1px solid rgba(255, 107, 107, .35);
@@ -417,7 +417,7 @@ export const HTML = `<!DOCTYPE html>
     padding: 8px 12px;
     border-radius: 6px;
   }
-  #auth-alts { font-size: 12px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
   #signup-form, #recovery-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -429,7 +429,7 @@ export const HTML = `<!DOCTYPE html>
     color: var(--text);
     padding: 8px 12px;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     outline: none;
   }
   #signup-form input:focus, #recovery-form input:focus { border-color: var(--accent); }
@@ -452,8 +452,8 @@ export const HTML = `<!DOCTYPE html>
     display: flex; flex-direction: column; gap: 10px;
     font-size: 13px;
   }
-  #rc-box h3 { font-size: 15px; font-weight: 600; }
-  #rc-box p { color: var(--text-muted); font-size: 12px; }
+  #rc-box h3 { font-size: 13px; font-weight: 600; }
+  #rc-box p { color: var(--text-muted); font-size: 13px; }
   #rc-codes {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -473,7 +473,7 @@ export const HTML = `<!DOCTYPE html>
     padding-top: 6px;
     display: flex; flex-direction: column; gap: 6px;
   }
-  #pk-section h4, #email-section h4, #account-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  #pk-section h4, #email-section h4, #account-section h4 { font-size: 13px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
   .account-actions { display: flex; gap: 8px; justify-content: space-between; }
   #email-current {
     display: flex; align-items: center; gap: 8px;
@@ -489,20 +489,20 @@ export const HTML = `<!DOCTYPE html>
     color: var(--text);
     padding: 6px 8px;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     outline: none;
   }
   #email-new-input:focus { border-color: var(--accent); }
   .email-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
   /* Let the message collapse to 0 height when empty so it doesn't pad
      out the bottom of the Email section. */
-  #email-msg { font-size: 11px; color: var(--text-muted); }
+  #email-msg { font-size: 13px; color: var(--text-muted); }
   #email-msg:empty { display: none; }
   #email-msg.error { color: #ff6b6b; }
   #email-msg.ok { color: #8fd18f; }
   .pk-row {
     display: flex; align-items: center; gap: 8px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -513,15 +513,15 @@ export const HTML = `<!DOCTYPE html>
     color: var(--text);
     padding: 8px 12px;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     width: 240px;
     outline: none;
   }
   #auth-form input:focus, #code-form input:focus { border-color: var(--accent); }
   #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  #auth-status { color: var(--text-muted); font-size: 12px; min-height: 18px; }
+  #auth-status { color: var(--text-muted); font-size: 13px; min-height: 18px; }
   #dev-link { margin-top: 8px; }
-  #dev-link a { color: var(--accent); font-size: 12px; }
+  #dev-link a { color: var(--accent); font-size: 13px; }
 
   /* --- Profile modal ----------------------------------------------------- */
   #profile-modal {
@@ -545,13 +545,13 @@ export const HTML = `<!DOCTYPE html>
     gap: 10px;
     position: relative;
   }
-  #profile-box h3 { font-size: 15px; font-weight: 600; }
+  #profile-box h3 { font-size: 13px; font-weight: 600; }
   #profile-meta {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-muted);
     margin-top: -8px;
   }
-  #profile-meta .fp { font-size: 11px; margin: 0; }
+  #profile-meta .fp { font-size: 13px; margin: 0; }
   #profile-close {
     position: absolute;
     top: 8px;
@@ -559,21 +559,21 @@ export const HTML = `<!DOCTYPE html>
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 20px;
+    font-size: 13px;
     line-height: 1;
     padding: 4px 8px;
     cursor: pointer;
     border-radius: 4px;
   }
   #profile-close:hover { color: var(--text); background: var(--border); }
-  #profile-box label { font-size: 12px; color: var(--text-muted); }
+  #profile-box label { font-size: 13px; color: var(--text-muted); }
   #profile-box input[type="text"] {
     background: var(--bg);
     border: 1px solid var(--border);
     color: var(--text);
     padding: 6px 8px;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     width: 100%;
     outline: none;
   }
@@ -603,7 +603,7 @@ export const HTML = `<!DOCTYPE html>
   #color-input::-moz-color-swatch { border: none; border-radius: 4px; }
   #color-warn {
     margin-top: 4px;
-    font-size: 11px;
+    font-size: 13px;
     color: #ff6b6b;
     min-height: 14px;
   }
@@ -612,7 +612,7 @@ export const HTML = `<!DOCTYPE html>
   /* All buttons inside the profile modal share a single height so the
      stack reads cleanly; icon-only buttons use equal padding to stay
      square. Save fills the row as the sole footer action. */
-  #profile-box .btn { padding: 6px 10px; font-size: 12px; line-height: 1.35; }
+  #profile-box .btn { padding: 6px 10px; font-size: 13px; line-height: 1.35; }
   #profile-box .btn.icon-btn { padding: 7px; }
   #profile-save { width: 100%; }
   .btn-danger { background: #5a1f1f; color: #f5bebe; }
@@ -636,7 +636,7 @@ export const HTML = `<!DOCTYPE html>
     display: flex; flex-direction: column; gap: 10px;
     font-size: 13px;
   }
-  #verify-box h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  #verify-box h3 { font-size: 13px; font-weight: 600; margin: 0; }
   #verify-box dl { display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px; margin: 0; }
   #verify-box dt { color: var(--text-muted); }
   #verify-box dd { margin: 0; font-family: monospace; word-break: break-all; }
@@ -645,7 +645,7 @@ export const HTML = `<!DOCTYPE html>
   #verify-box pre {
     background: var(--bg); border: 1px solid var(--border);
     padding: 8px; border-radius: 4px;
-    font-size: 11px; overflow-x: auto;
+    font-size: 13px; overflow-x: auto;
     white-space: pre; margin: 0;
   }
   #verify-box .actions { display: flex; justify-content: flex-end; }
@@ -656,7 +656,7 @@ export const HTML = `<!DOCTYPE html>
   .fp {
     color: var(--text-muted);
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 10px;
+    font-size: 13px;
     margin-right: 6px;
     user-select: all;
   }
@@ -700,8 +700,8 @@ export const HTML = `<!DOCTYPE html>
     display: flex; flex-direction: column; gap: 10px;
     font-size: 13px;
   }
-  #user-box h3 { font-size: 17px; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 8px; }
-  #user-box h3 .fp { font-size: 11px; }
+  #user-box h3 { font-size: 13px; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 8px; }
+  #user-box h3 .fp { font-size: 13px; }
   #user-box dl { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; margin: 0; }
   #user-box dt { color: var(--text-muted); }
   #user-box dd { margin: 0; }
@@ -709,7 +709,7 @@ export const HTML = `<!DOCTYPE html>
 
   /* --- Connection status ------------------------------------------------- */
   #conn-status {
-    font-size: 11px;
+    font-size: 13px;
     padding: 4px 12px;
     text-align: center;
     background: #2a1a1a;
