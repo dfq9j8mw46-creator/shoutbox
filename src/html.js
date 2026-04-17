@@ -705,9 +705,11 @@ export const HTML = `<!DOCTYPE html>
   }
   /* Glass pill inputs match the email pill aesthetic: translucent
      surface, soft border, fully rounded, with backdrop blur. Focus
-     lifts both the wash and border slightly. Direct-child selector so
-     inputs nested inside an .input-pill (e.g. the recovery-code field)
-     stay unstyled here and pick up the .input-pill rules instead. */
+     lifts both the wash and border slightly. min-height matches the
+     pill (38px) so standalone fields and pills sit at the same size.
+     Direct-child selector so inputs nested inside an .input-pill (e.g.
+     the recovery-code field) stay unstyled here and pick up the
+     .input-pill rules instead. */
   #signup-form > input, #code-form > input, #recovery-form > input {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -719,6 +721,7 @@ export const HTML = `<!DOCTYPE html>
     font-size: 13px;
     width: 320px;
     max-width: 100%;
+    min-height: 38px;
     outline: none;
     transition: background-color 120ms ease, border-color 120ms ease;
   }
@@ -759,15 +762,16 @@ export const HTML = `<!DOCTYPE html>
     outline: none;
   }
   .input-pill > input::placeholder { color: var(--text-muted); font-size: 13px; }
-  /* Button shrunk just enough that the pill's flex height matches the
-     standalone glass inputs in signup/code/recovery (~33px desktop /
-     ~46px mobile). Prefixed with #auth-screen so its specificity beats
-     the auth-screen .btn rule (which would otherwise inflate padding
-     to 8px 18px). Explicitly opts out of the mobile .btn min-height
-     since the surrounding pill already provides the 44px tap target. */
+  /* Mirror the chat #send-btn exactly: 4px margin around a 6px-padded
+     pill containing a 16px svg, solid accent fill. Same proportions
+     mean the email/recovery/code pills look like the chat input pill
+     they're modelled on. Prefixed with #auth-screen so its specificity
+     beats the auth-screen .btn rule. Explicitly opts out of the mobile
+     .btn min-height since the surrounding pill already provides a
+     44px tap target. */
   #auth-screen .input-pill > button[type=submit] {
-    margin: 3px;
-    padding: 4px;
+    margin: 4px;
+    padding: 6px;
     min-height: 0;
     border: none;
     border-radius: 999px;
@@ -1063,8 +1067,12 @@ export const HTML = `<!DOCTYPE html>
       </form>
 
       <form id="code-form" style="display:none;">
-        <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
-        <button type="submit" class="btn btn-primary">Sign in</button>
+        <div id="code-pill" class="input-pill">
+          <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+          <button type="submit" class="btn btn-primary" id="code-submit-btn" aria-label="Sign in" style="visibility:hidden;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+        </div>
       </form>
 
       <form id="recovery-form" style="display:none;">
@@ -1254,6 +1262,7 @@ export const HTML = `<!DOCTYPE html>
   const emailSubmitBtn = document.getElementById('email-submit-btn');
   const codeForm    = document.getElementById('code-form');
   const codeInput   = document.getElementById('code-input');
+  const codeSubmitBtn = document.getElementById('code-submit-btn');
   const authBack    = document.getElementById('auth-back');
   const authStatus  = document.getElementById('auth-status');
   const devLink     = document.getElementById('dev-link');
@@ -1554,7 +1563,7 @@ export const HTML = `<!DOCTYPE html>
   // timestamp to keep yanking us to the newest message until the dust
   // settles, then steps back so manual scrolling works normally.
   let chatOpenedAt = 0;
-  const POST_LOGIN_PIN_MS = 2500;
+  const POST_LOGIN_PIN_MS = 3500;
 
   function showChat() {
     isAuthed = true;
@@ -1572,6 +1581,18 @@ export const HTML = `<!DOCTYPE html>
     authScreen.style.display = 'none';
     chatScreen.style.display = 'flex';
     chatOpenedAt = Date.now();
+    // Belt-and-suspenders: in addition to the ResizeObserver pin (which
+    // catches actual layout-driven resizes), schedule explicit scroll
+    // attempts at known iOS-keyboard-dismiss timings. Cheap and idempotent
+    // — each just snaps scrollTop to scrollHeight if we're still in the
+    // post-login window.
+    [50, 200, 400, 800, 1500, 2500].forEach((ms) => {
+      setTimeout(() => {
+        if (chatOpenedAt && Date.now() - chatOpenedAt < POST_LOGIN_PIN_MS) {
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+      }, ms);
+    });
     connectWS();
   }
 
@@ -1811,6 +1832,7 @@ export const HTML = `<!DOCTYPE html>
     // the user navigated away with a value typed and then returned.
     updateEmailSubmitVisibility();
     updateRecoverySubmitVisibility();
+    updateCodeSubmitVisibility();
     if (which !== 'code') hideResend();
     stopAuthPolling();
     // Conditional WebAuthn fires on any screen with a webauthn-tagged
@@ -2040,9 +2062,13 @@ export const HTML = `<!DOCTYPE html>
   // Auto-submit the 6-digit code as soon as it's entered (typed or pasted).
   // Stripping non-digits lets paste of "123-456" or "Your code: 123456" land
   // cleanly. The submit handler still re-validates so a bad value is safe.
+  function updateCodeSubmitVisibility() {
+    codeSubmitBtn.style.visibility = codeInput.value.trim() ? 'visible' : 'hidden';
+  }
   codeInput.addEventListener('input', () => {
     const digits = codeInput.value.replace(/\\D/g, '').slice(0, 6);
     if (digits !== codeInput.value) codeInput.value = digits;
+    updateCodeSubmitVisibility();
     if (digits.length === 6 && !codeInput.disabled) {
       if (typeof codeForm.requestSubmit === 'function') codeForm.requestSubmit();
       else codeForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
