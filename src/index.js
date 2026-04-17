@@ -232,7 +232,7 @@ function generateCode() {
 }
 
 async function createSession(env, email, secret) {
-  email = await maybeMigrateChangedLegacyOwnerId(env, email);
+  email = await maybeMigrateChangedLegacyOwnerId(env, secret, email);
   const sid = crypto.randomUUID();
   const profile = await loadOrCreateProfile(env, email, secret);
   const session = JSON.stringify({
@@ -264,6 +264,61 @@ async function reserveUsername(env, base, email) {
   return base + Math.floor(Math.random() * 9999);
 }
 
+// Email-key helpers.
+//
+// Every KV key that used to embed a plaintext email now embeds an HMAC
+// of the email instead. That kills the "grep the KV dump for
+// emailIndex:alice@example.com" attack: without SECRET you can't map a
+// known email to its key, and you can't reverse a hashed key to an email.
+// The email still lives in the VALUE of emailIndex entries so the scan
+// still works for listOwnedEmails — but it's not patterned, so an
+// attacker can't find a specific user's entry without scanning every
+// emailIndex record.
+//
+// Lazy migration: wherever we'd formerly read emailIndex:<email>, we now
+// read the hashed key, fall back to the legacy plaintext key, and — on a
+// hit — rewrite to the hashed form and delete the plaintext entry. So
+// old data gets cleaned up the first time each email is looked up after
+// deploy, with zero downtime.
+async function hashEmailKey(secret, email) {
+  return (await hmac(secret, 'email:' + email.toLowerCase())).slice(0, 32);
+}
+
+async function getOwnerByEmail(env, secret, email) {
+  email = email.toLowerCase();
+  const hashed = await hashEmailKey(secret, email);
+  const hashedRaw = await env.KV.get(`emailIndex:${hashed}`);
+  if (hashedRaw) {
+    try {
+      const parsed = JSON.parse(hashedRaw);
+      if (parsed && typeof parsed === 'object' && parsed.owner) return parsed.owner;
+    } catch {}
+    return hashedRaw;
+  }
+  const legacy = await env.KV.get(`emailIndex:${email}`);
+  if (legacy) {
+    await env.KV.put(`emailIndex:${hashed}`, JSON.stringify({ owner: legacy, email }));
+    await env.KV.delete(`emailIndex:${email}`);
+    return legacy;
+  }
+  return null;
+}
+
+async function putEmailIndex(env, secret, email, ownerId) {
+  email = email.toLowerCase();
+  const hashed = await hashEmailKey(secret, email);
+  await env.KV.put(`emailIndex:${hashed}`, JSON.stringify({ owner: ownerId, email }));
+  // Scrub any legacy plaintext entry that might still exist.
+  await env.KV.delete(`emailIndex:${email}`);
+}
+
+async function deleteEmailIndexByEmail(env, secret, email) {
+  email = email.toLowerCase();
+  const hashed = await hashEmailKey(secret, email);
+  await env.KV.delete(`emailIndex:${hashed}`);
+  await env.KV.delete(`emailIndex:${email}`);
+}
+
 async function listOwnedEmails(env, ownerId) {
   const prefix = 'emailIndex:';
   let cursor = undefined;
@@ -271,8 +326,17 @@ async function listOwnedEmails(env, ownerId) {
   do {
     const page = await env.KV.list({ prefix, cursor, limit: 1000 });
     const matches = await Promise.all(page.keys.map(async ({ name }) => {
-      const pointer = await env.KV.get(name);
-      return pointer === ownerId ? name.slice(prefix.length) : null;
+      const raw = await env.KV.get(name);
+      if (!raw) return null;
+      // New hashed format: value is JSON { owner, email }.
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && parsed.owner) {
+          return parsed.owner === ownerId ? parsed.email : null;
+        }
+      } catch {}
+      // Legacy plaintext format: value is ownerId, email is the key suffix.
+      return raw === ownerId ? name.slice(prefix.length) : null;
     }));
     for (const email of matches) {
       if (email) emails.push(email);
@@ -282,24 +346,26 @@ async function listOwnedEmails(env, ownerId) {
   return [...new Set(emails)];
 }
 
-async function rewriteOwnedEmailIndexes(env, ownerId, keepEmails = [], nextOwnerId = ownerId) {
+async function rewriteOwnedEmailIndexes(env, secret, ownerId, keepEmails = [], nextOwnerId = ownerId) {
   const keep = new Set(keepEmails.filter(Boolean).map((email) => email.toLowerCase()));
   const owned = await listOwnedEmails(env, ownerId);
-  await Promise.all(owned.map((email) => (
-    keep.has(email)
-      ? env.KV.put(`emailIndex:${email}`, nextOwnerId)
-      : env.KV.delete(`emailIndex:${email}`)
-  )));
-  await Promise.all([...keep].map((email) => env.KV.put(`emailIndex:${email}`, nextOwnerId)));
+  await Promise.all(owned.map(async (email) => {
+    if (keep.has(email)) {
+      await putEmailIndex(env, secret, email, nextOwnerId);
+    } else {
+      await deleteEmailIndexByEmail(env, secret, email);
+    }
+  }));
+  await Promise.all([...keep].map((email) => putEmailIndex(env, secret, email, nextOwnerId)));
 }
 
-async function migrateLegacyOwnerId(env, ownerId, profile, keepEmails = []) {
+async function migrateLegacyOwnerId(env, secret, ownerId, profile, keepEmails = []) {
   if (!ownerId || isSyntheticOwnerId(ownerId)) return ownerId;
 
   const latestProfileRaw = await env.KV.get(`profile:${ownerId}`);
   if (!latestProfileRaw) {
     const keep = keepEmails.find(Boolean);
-    return keep ? ((await env.KV.get(`emailIndex:${keep.toLowerCase()}`)) || ownerId) : ownerId;
+    return keep ? ((await getOwnerByEmail(env, secret, keep)) || ownerId) : ownerId;
   }
   const latestProfile = profile || JSON.parse(latestProfileRaw);
   const newOwnerId = ACCOUNT_OWNER_PREFIX + crypto.randomUUID();
@@ -352,18 +418,23 @@ async function migrateLegacyOwnerId(env, ownerId, profile, keepEmails = []) {
   }
   await env.KV.delete(`usessions:${ownerId}`);
 
-  await rewriteOwnedEmailIndexes(env, ownerId, keepEmails, newOwnerId);
+  await rewriteOwnedEmailIndexes(env, secret, ownerId, keepEmails, newOwnerId);
   return newOwnerId;
 }
 
-async function maybeMigrateChangedLegacyOwnerId(env, ownerId) {
+// Force-migrate any legacy-format ownerId (where ownerId == plaintext
+// email) to a synthetic UUID. Previously this only fired when the email
+// had *changed*; running unconditionally pulls plaintext email out of
+// every KV key suffix (profile:, usessions:, userCreds:, recovery:,
+// credentials) for legacy accounts on their next login. Idempotent —
+// synthetic ownerIds short-circuit immediately.
+async function maybeMigrateChangedLegacyOwnerId(env, secret, ownerId) {
   if (!ownerId || isSyntheticOwnerId(ownerId)) return ownerId;
   const raw = await env.KV.get(`profile:${ownerId}`);
   if (!raw) return ownerId;
   const profile = JSON.parse(raw);
   const currentEmail = (profile.email || '').trim().toLowerCase();
-  if (!currentEmail || currentEmail === ownerId) return ownerId;
-  return migrateLegacyOwnerId(env, ownerId, profile, [currentEmail]);
+  return migrateLegacyOwnerId(env, secret, ownerId, profile, currentEmail ? [currentEmail] : []);
 }
 
 // `ownerId` here is the stable account identifier. Older magic-link accounts
@@ -410,20 +481,20 @@ async function loadOrCreateProfile(env, ownerId, secret) {
 // Resolve a login email to the account ownerId. Legacy accounts (ownerId ==
 // email, no emailIndex yet) are backfilled on first lookup so the index
 // becomes authoritative going forward.
-async function resolveOwnerIdForEmail(env, email) {
-  const existing = await env.KV.get(`emailIndex:${email}`);
+async function resolveOwnerIdForEmail(env, secret, email) {
+  const existing = await getOwnerByEmail(env, secret, email);
   if (existing) return existing;
   const legacyRaw = await env.KV.get(`profile:${email}`);
   if (legacyRaw) {
     const legacyProfile = JSON.parse(legacyRaw);
     const currentEmail = (legacyProfile.email || '').trim().toLowerCase();
     if (!currentEmail || currentEmail === email) {
-      await env.KV.put(`emailIndex:${email}`, email);
+      await putEmailIndex(env, secret, email, email);
       return email;
     }
-    await migrateLegacyOwnerId(env, email, legacyProfile, [currentEmail]);
+    await migrateLegacyOwnerId(env, secret, email, legacyProfile, [currentEmail]);
   }
-  await env.KV.put(`emailIndex:${email}`, email);
+  await putEmailIndex(env, secret, email, email);
   return email;
 }
 
@@ -435,11 +506,11 @@ async function saveSession(env, sid, session) {
 // writes fan out via updateAllSessions. Auth hot paths (every /auth/me, /ws,
 // etc.) read only the session record here; the profile record is loaded
 // explicitly at the one write endpoint that needs it.
-async function loadSession(env, sid) {
+async function loadSession(env, secret, sid) {
   const raw = await env.KV.get(`session:${sid}`);
   if (!raw) return null;
   const session = JSON.parse(raw);
-  const nextOwnerId = await maybeMigrateChangedLegacyOwnerId(env, session.email);
+  const nextOwnerId = await maybeMigrateChangedLegacyOwnerId(env, secret, session.email);
   if (nextOwnerId === session.email) return session;
   const migratedRaw = await env.KV.get(`session:${sid}`);
   if (!migratedRaw) return null;
@@ -678,7 +749,8 @@ async function handleRequest(request, env) {
       if (!ipRl.ok) return json({ error: 'Too many requests' }, 429);
 
       // Prevent mailbombing a target: 5 sends per hour per email address.
-      const rl = await rateLimit(env, `send_rate:${email}`, 5, 60 * 60);
+      const emailKeyHash = await hashEmailKey(secret, email);
+      const rl = await rateLimit(env, `send_rate:${emailKeyHash}`, 5, 60 * 60);
       if (!rl.ok) {
         return json({ error: `Too many requests - try again in ${Math.ceil(rl.retryAfterSec / 60)} min` }, 429);
       }
@@ -696,10 +768,12 @@ async function handleRequest(request, env) {
         const code = generateCode();
         // Never store the plaintext code. Hash it with the worker
         // secret so a KV dump during the 10m TTL window doesn't reveal
-        // live codes to anyone without SECRET.
+        // live codes to anyone without SECRET. The key is also keyed by
+        // hashed email so the mapping (email → pending code) isn't
+        // visible by pattern-matching KV keys.
         const codeHash = await hmac(secret, 'code:' + code);
         await env.KV.put(
-          `magic:code:${email}`,
+          `magic:code:${emailKeyHash}`,
           JSON.stringify({ codeHash, attempts: 0 }),
           { expirationTtl: 600 },
         );
@@ -776,7 +850,7 @@ async function handleRequest(request, env) {
       const body = await request.json().catch(() => ({}));
       const rpID = url.hostname;
       const sid = getCookie(request, 'sid');
-      const session = sid ? await loadSession(env, sid) : null;
+      const session = sid ? await loadSession(env, secret, sid) : null;
 
       let ownerId, userName, isNew = false;
       let excludeIds = [];
@@ -985,7 +1059,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/passkeys' && request.method === 'GET') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const entries = await listCredentialEntries(env, session.email);
       return json({ passkeys: entries.map(({ id, createdAt }) => ({ id, createdAt })) });
@@ -994,7 +1068,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/passkeys/delete' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const body = await request.json().catch(() => ({}));
       const credId = (body.id || '').trim();
@@ -1010,7 +1084,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/sessions/revoke-others' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const revoked = await deleteOtherSessions(env, session.email, sid);
       return json({ ok: true, revoked });
@@ -1095,7 +1169,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/recovery/regenerate' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       // Each call runs 10 PBKDF2 rounds near the Worker CPU cap. Cap to 3/hour.
       const rl = await rateLimit(env, `regen_rl:${session.email}`, 3, 60 * 60);
@@ -1120,7 +1194,8 @@ async function handleRequest(request, env) {
       if (!email || !/^\d{6}$/.test(code)) {
         return json({ error: 'Invalid code' }, 400);
       }
-      const key = `magic:code:${email}`;
+      const emailKeyHash = await hashEmailKey(secret, email);
+      const key = `magic:code:${emailKeyHash}`;
       const raw = await env.KV.get(key);
       if (!raw) return json({ error: 'Code expired - request a new one' }, 400);
       const record = JSON.parse(raw);
@@ -1135,7 +1210,7 @@ async function handleRequest(request, env) {
         return json({ error: 'Wrong code' }, 400);
       }
       await env.KV.delete(key);
-      const ownerId = await resolveOwnerIdForEmail(env, email);
+      const ownerId = await resolveOwnerIdForEmail(env, secret, email);
       const sid = await createSession(env, ownerId, secret);
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }) });
     }
@@ -1161,7 +1236,7 @@ async function handleRequest(request, env) {
       }
       await env.KV.delete(`magic:${token}`);
 
-      const ownerId = await resolveOwnerIdForEmail(env, email);
+      const ownerId = await resolveOwnerIdForEmail(env, secret, email);
       const sid = await createSession(env, ownerId, secret);
 
       return new Response(null, {
@@ -1176,7 +1251,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/me' && request.method === 'GET') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const passkeyCount = (await listCredentialIds(env, session.email)).length;
       // Email can be changed/removed independently of the ownerId, so the
@@ -1197,7 +1272,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/email/send' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const ownerId = session.email;
 
@@ -1213,11 +1288,12 @@ async function handleRequest(request, env) {
       if (!ipRl.ok) return json({ error: 'Too many requests' }, 429);
       const ownerRl = await rateLimit(env, `email_chg_rl:${ownerId}`, 5, 60 * 60);
       if (!ownerRl.ok) return json({ error: 'Too many requests' }, 429);
-      const targetRl = await rateLimit(env, `email_chg_target:${newEmail}`, 5, 60 * 60);
+      const newEmailKeyHash = await hashEmailKey(secret, newEmail);
+      const targetRl = await rateLimit(env, `email_chg_target:${newEmailKeyHash}`, 5, 60 * 60);
       if (!targetRl.ok) return json({ error: 'Too many requests' }, 429);
 
       // Conflict checks: email must not be claimed by a different account.
-      const existingOwner = await env.KV.get(`emailIndex:${newEmail}`);
+      const existingOwner = await getOwnerByEmail(env, secret, newEmail);
       if (existingOwner && existingOwner !== ownerId) {
         return json({ error: 'Email already in use' }, 409);
       }
@@ -1293,12 +1369,12 @@ async function handleRequest(request, env) {
 
       let ownerIdForWrite = ownerId;
       if (!isSyntheticOwnerId(ownerId) && newEmail !== ownerId) {
-        ownerIdForWrite = await migrateLegacyOwnerId(env, ownerId, profile, [newEmail]);
+        ownerIdForWrite = await migrateLegacyOwnerId(env, secret, ownerId, profile, [newEmail]);
       }
 
       // Re-check conflict: the token could have been issued before someone
       // else claimed the same address.
-      const existingOwner = await env.KV.get(`emailIndex:${newEmail}`);
+      const existingOwner = await getOwnerByEmail(env, secret, newEmail);
       if (existingOwner && existingOwner !== ownerIdForWrite) {
         return new Response('That email is now in use. <a href="/">Return</a>', {
           status: 409, headers: { 'Content-Type': 'text/html' },
@@ -1307,7 +1383,7 @@ async function handleRequest(request, env) {
 
       profile.email = newEmail;
       await env.KV.put(`profile:${ownerIdForWrite}`, JSON.stringify(profile));
-      await rewriteOwnedEmailIndexes(env, ownerIdForWrite, [newEmail]);
+      await rewriteOwnedEmailIndexes(env, secret, ownerIdForWrite, [newEmail]);
 
       return new Response(null, {
         status: 302,
@@ -1318,7 +1394,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/email/remove' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const ownerId = session.email;
 
@@ -1335,12 +1411,12 @@ async function handleRequest(request, env) {
 
       let ownerIdForWrite = ownerId;
       if (!isSyntheticOwnerId(ownerId)) {
-        ownerIdForWrite = await migrateLegacyOwnerId(env, ownerId, profile, []);
+        ownerIdForWrite = await migrateLegacyOwnerId(env, secret, ownerId, profile, []);
       }
 
       delete profile.email;
       await env.KV.put(`profile:${ownerIdForWrite}`, JSON.stringify(profile));
-      await rewriteOwnedEmailIndexes(env, ownerIdForWrite, []);
+      await rewriteOwnedEmailIndexes(env, secret, ownerIdForWrite, []);
 
       return json({ ok: true });
     }
@@ -1358,10 +1434,13 @@ async function handleRequest(request, env) {
       const praw = await env.KV.get(`profile:${ownerEmail}`);
       if (!praw) return json({ error: 'Not found' }, 404);
       const p = JSON.parse(praw);
+      // Intentionally no fingerprint here: peers shouldn't be able to
+      // pull a user's stable 24-bit HMAC via a lookup endpoint any more
+      // than they should see it over the WebSocket. The user's own
+      // fingerprint is still returned by /auth/me.
       return json({
         username: p.username,
         color: p.color,
-        fingerprint: p.fingerprint,
         created_at: p.created_at,
       });
     }
@@ -1369,7 +1448,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/profile' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       // Profile read is needed here to preserve created_at on write; other
       // auth endpoints skip it to keep the hot path at one KV read.
@@ -1448,7 +1527,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/delete' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
 
       // Ask the chat room to wipe this user's messages and close sockets
@@ -1462,7 +1541,7 @@ async function handleRequest(request, env) {
       } catch {}
 
       await deleteUsernameIfOwned(env, session.username, session.email);
-      await rewriteOwnedEmailIndexes(env, session.email, []);
+      await rewriteOwnedEmailIndexes(env, secret, session.email, []);
       await env.KV.delete(`profile:${session.email}`);
       await deleteAllCredentials(env, session.email);
       await deleteAllSessions(env, session.email);
@@ -1474,7 +1553,7 @@ async function handleRequest(request, env) {
     if (url.pathname === '/ws') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, sid);
+      const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const roomId = env.CHAT_ROOM.idFromName('main');
       const room = env.CHAT_ROOM.get(roomId);

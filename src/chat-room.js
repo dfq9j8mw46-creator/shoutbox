@@ -118,7 +118,7 @@ export class ChatRoom {
       this.messages = this.messages.filter((m) => m.fingerprint !== fp);
       if (this.messages.length !== before) {
         await this.state.storage.put('messages', this.messages);
-        this.broadcast({ type: 'history', messages: this.messages });
+        this.broadcast({ type: 'history', messages: this.messages.map(stripFingerprint) });
       }
       for (const ws of this.state.getWebSockets()) {
         const a = ws.deserializeAttachment() || {};
@@ -160,7 +160,7 @@ export class ChatRoom {
     server.serializeAttachment({ username, color, fingerprint });
 
     // Send history to the new client
-    server.send(JSON.stringify({ type: 'history', messages: this.messages }));
+    server.send(JSON.stringify({ type: 'history', messages: this.messages.map(stripFingerprint) }));
 
     this.broadcastOnline();
 
@@ -209,7 +209,7 @@ export class ChatRoom {
       // Persist (non-blocking - Durable Object guarantees ordering)
       this.state.storage.put('messages', this.messages);
 
-      this.broadcast({ type: 'msg', ...msg });
+      this.broadcast({ type: 'msg', ...stripFingerprint(msg) });
     }
 
     // Profile updates are intentionally not accepted over the WebSocket.
@@ -244,16 +244,28 @@ export class ChatRoom {
       const a = ws.deserializeAttachment() || {};
       // Dedup tabs of the same user by fingerprint. Fall back to the
       // socket object itself so unauthenticated/legacy connections stay
-      // distinct instead of collapsing to a single "anon" row.
+      // distinct instead of collapsing to a single "anon" row. The
+      // fingerprint stays server-side only — it's NOT included in the
+      // broadcast payload, so peers can't correlate one user across
+      // username changes.
       const key = a.fingerprint || ws;
       if (byKey.has(key)) continue;
       byKey.set(key, {
         username: a.username || 'Anon',
         color: a.color || '#888888',
-        fingerprint: a.fingerprint || '',
       });
     }
     const users = [...byKey.values()];
     this.broadcast({ type: 'online', count: users.length, users });
   }
+}
+
+// Shallow copy of a stored message with the fingerprint field removed.
+// We keep the fingerprint in DO storage because the self-delete flow
+// filters messages by it, but peers never see it — otherwise a stable
+// 24-bit HMAC would let the whole room correlate a user across every
+// username change they ever make.
+function stripFingerprint(msg) {
+  const { fingerprint: _drop, ...rest } = msg;
+  return rest;
 }
