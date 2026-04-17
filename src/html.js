@@ -2226,7 +2226,7 @@ export const HTML = `<!DOCTYPE html>
   }
 
   // --- Messages ---
-  // Render a relative timestamp: "<1m" for the first 2 minutes (a stable
+  // Render a relative timestamp: "0m" for the first 2 minutes (a stable
   // label, not a ticking seconds counter), "Nm" up to 10 minutes,
   // multiples of 5 minutes ("10m", "15m", "20m", ...) up to 2 hours,
   // then "Nh" up to 2 days, "Nd" after that. The 5-minute rounding past
@@ -2235,7 +2235,7 @@ export const HTML = `<!DOCTYPE html>
   // change once every 5 minutes by construction.
   function formatRelativeTime(tsMs) {
     const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
-    if (diffSec < 120) return '<1m';
+    if (diffSec < 120) return '0m';
     const diffMin = Math.floor(diffSec / 60);
     if (diffMin < 10) return diffMin + 'm';
     if (diffMin < 120) return (Math.floor(diffMin / 5) * 5) + 'm';
