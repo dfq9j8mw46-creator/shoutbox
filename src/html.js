@@ -600,7 +600,7 @@ export const HTML = `<!DOCTYPE html>
 
   /* --- Grouped sections in profile modal --------------------------------- */
   #pk-section, #email-section, #account-section {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
     padding-top: 6px;
     display: flex; flex-direction: column; gap: 6px;
   }
@@ -615,15 +615,16 @@ export const HTML = `<!DOCTYPE html>
   #email-actions { display: flex; gap: 4px; }
   #email-form { display: flex; flex-direction: column; gap: 6px; }
   #email-new-input {
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--text);
-    padding: 6px 8px;
-    border-radius: 4px;
+    padding: 8px 14px;
+    border-radius: 999px;
     font-size: 13px;
     outline: none;
+    transition: background-color 120ms ease, border-color 120ms ease;
   }
-  #email-new-input:focus { border-color: var(--accent); }
+  #email-new-input:focus { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
   .email-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
   /* Let the message collapse to 0 height when empty so it doesn't pad
      out the bottom of the Email section. */
@@ -756,16 +757,23 @@ export const HTML = `<!DOCTYPE html>
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,.6);
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
     align-items: center;
     justify-content: center;
     z-index: 100;
   }
   #profile-modal.open { display: flex; }
+  /* Glass card matching the login screen aesthetic: translucent surface,
+     soft border, generous radius, heavy backdrop blur so the chat
+     scrolling behind reads as a softened texture. */
   #profile-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
     padding: 20px;
     width: 300px;
     display: flex;
@@ -796,15 +804,17 @@ export const HTML = `<!DOCTYPE html>
   #profile-close:hover { color: var(--text); background: var(--border); }
   #profile-box label { font-size: 13px; color: var(--text-muted); }
   #profile-box input[type="text"] {
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--text);
-    padding: 6px 8px;
-    border-radius: 4px;
+    padding: 8px 14px;
+    border-radius: 999px;
     font-size: 13px;
     width: 100%;
     outline: none;
+    transition: background-color 120ms ease, border-color 120ms ease;
   }
+  #profile-box input[type="text"]:focus { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
   .color-row {
     display: flex;
     align-items: center;
@@ -837,11 +847,34 @@ export const HTML = `<!DOCTYPE html>
   }
   #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   #profile-box .actions .spacer { flex: 1; }
-  /* All buttons inside the profile modal share a single height so the
-     stack reads cleanly; icon-only buttons use equal padding to stay
-     square. Save fills the row as the sole footer action. */
-  #profile-box .btn { padding: 6px 10px; font-size: 13px; line-height: 1.35; }
+  /* Glass buttons matching the login screen — translucent surface, soft
+     border, fully rounded. Scoped to #profile-box so the chat input's
+     send button (also .btn .btn-primary) keeps its solid accent fill. */
+  #profile-box .btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    line-height: 1.35;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  #profile-box .btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
   #profile-box .btn.icon-btn { padding: 7px; }
+  #profile-box .btn-primary {
+    background: rgba(91, 141, 239, 0.20);
+    border-color: rgba(91, 141, 239, 0.45);
+    color: #fff;
+  }
+  #profile-box .btn-primary:hover { background: rgba(91, 141, 239, 0.30); border-color: rgba(91, 141, 239, 0.65); }
+  #profile-box .btn-danger {
+    background: rgba(255, 107, 107, 0.12);
+    border-color: rgba(255, 107, 107, 0.28);
+    color: #ff9b9b;
+  }
+  #profile-box .btn-danger:hover { background: rgba(255, 107, 107, 0.22); border-color: rgba(255, 107, 107, 0.45); color: #ffb3b3; }
   #profile-save { width: 100%; }
   .btn-danger { background: #5a1f1f; color: #f5bebe; }
   .btn-danger:hover { background: #7a2a2a; }
@@ -1125,13 +1158,13 @@ export const HTML = `<!DOCTYPE html>
       <div id="pk-list"></div>
       <button class="btn" id="pk-add-btn" type="button">Add passkey</button>
       <button class="btn" id="rc-regen-btn" type="button">New recovery codes</button>
-      <button class="btn" id="revoke-others-btn" type="button">Sign out other devices</button>
     </div>
     <div id="account-section">
       <h4>Account</h4>
       <div class="account-actions">
-        <button class="btn" id="profile-logout" type="button">Sign out</button>
-        <button class="btn btn-danger" id="profile-delete" type="button">Delete account</button>
+        <button class="btn" id="profile-logout" type="button">Logout</button>
+        <button class="btn" id="revoke-others-btn" type="button">Revoke all</button>
+        <button class="btn btn-danger" id="profile-delete" type="button">Delete</button>
       </div>
       <button class="btn" id="build-provenance-btn" type="button">Build provenance</button>
       <button class="btn btn-primary" id="profile-save">Save</button>
