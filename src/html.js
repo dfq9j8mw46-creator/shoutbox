@@ -460,10 +460,13 @@ export const HTML = `<!DOCTYPE html>
     justify-content: center;
     gap: 16px;
     width: 100%;
-    min-height: 100px;
+    /* Reservation absorbs the worst-case form (two-input recovery)
+       plus the 44px back/email circle below, so the heading above and
+       alts below stay anchored across every state. */
+    min-height: 150px;
   }
   @media (max-width: 640px) {
-    #auth-stack { min-height: 170px; }
+    #auth-stack { min-height: 200px; }
   }
   #auth-primary { display: flex; gap: 8px; }
   /* Glass button treatment matches the chat-input pill (#input-wrap):
@@ -524,17 +527,26 @@ export const HTML = `<!DOCTYPE html>
     color: var(--text);
   }
   #use-email-btn svg { display: block; }
-  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  /* Alts row reserves a single-line slot so toggling the "Use recovery
+     code" link in or out doesn't shift the heading above. */
+  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 18px; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
-  /* Small back icon button in the auth-alts footer row. Glass pill,
-     muted by default, brightens on hover. */
+  /* Back button shares the same 44px glass-circle treatment as
+     #use-email-btn so they read as the same kind of secondary action,
+     just for different intents (alternate entry vs return). They sit
+     in the same flex slot inside auth-stack — only one is ever
+     visible at a time. */
   #auth-back {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 999px;
-    padding: 4px 8px;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
     color: var(--text-muted);
+    padding: 0;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -1026,9 +1038,8 @@ export const HTML = `<!DOCTYPE html>
       <button class="btn btn-primary" id="pk-signin-btn">Use passkey</button>
     </div>
 
-    <button type="button" id="use-email-btn" aria-label="Sign in with email" style="display:none;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg>
-    </button>
+    <button type="button" id="use-email-btn" aria-label="Sign in with email" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg></button>
+    <button type="button" id="auth-back" aria-label="Back" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
 
     <form id="auth-form" style="display:none;">
       <div id="email-pill" class="input-pill">
@@ -1066,9 +1077,6 @@ export const HTML = `<!DOCTYPE html>
     <div id="dev-link"></div>
   </div>
   <div id="auth-alts">
-    <button type="button" id="auth-back" aria-label="Back" style="display:none;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-    </button>
     <a href="#" id="use-recovery" style="display:none;">Use recovery code</a>
   </div>
 </div>
@@ -1771,7 +1779,7 @@ export const HTML = `<!DOCTYPE html>
     // 'email' state. When passkeys aren't supported we collapse to the
     // email pill on the primary view (since there's nothing to gate).
     authPrimary.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
-    useEmailBtn.style.display = (onPrimary && pkSupported) ? 'inline-block' : 'none';
+    useEmailBtn.style.display = (onPrimary && pkSupported) ? 'inline-flex' : 'none';
     authForm.style.display = (onEmail || (onPrimary && !pkSupported)) ? 'flex' : 'none';
     signupForm.style.display = which === 'signup' ? 'flex' : 'none';
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
