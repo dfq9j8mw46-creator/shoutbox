@@ -528,8 +528,9 @@ export const HTML = `<!DOCTYPE html>
 </head>
 <body>
 
-<!-- Auth screen -->
-<div id="auth-screen">
+<!-- Auth screen (hidden until checkAuth resolves - avoids a flash of the
+     login page on refresh when the user is already signed in) -->
+<div id="auth-screen" style="display:none;">
   <h1>Shoutbox</h1>
   <p id="auth-intro">Sign in with a passkey - no email, no password.</p>
 
@@ -942,7 +943,7 @@ export const HTML = `<!DOCTYPE html>
   function showAuth() {
     isAuthed = false;
     resetConnectionState();
-    authScreen.style.display = '';
+    authScreen.style.display = 'flex';
     chatScreen.style.display = 'none';
     try { showAuthForm('primary'); } catch {}
   }
