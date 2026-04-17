@@ -42,36 +42,36 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
   }
 
-  /* Subtle "Shoutbox · build xxx" label sitting on the chat background,
-     right-aligned just above the online-users strip. Clicking it opens
-     the build-provenance modal. */
-  #status-line {
-    text-align: right;
-    padding: 4px 12px 0;
-    font-size: 11px;
+  /* Row that sits just above the chat bar: own name pinned first, then
+     the rest of the online users, an optional "+N more" chip, and the
+     SB build badge on the right. */
+  #chat-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
     color: var(--text-muted);
     flex-shrink: 0;
   }
-  #status-line a {
-    color: inherit;
-    text-decoration: none;
-    cursor: pointer;
-  }
-  #status-line a:hover { color: var(--text); }
-
-  /* Horizontal strip of online users. Scrolls if the list overflows. We
-     use per-item margin-right rather than flex gap so the spacing can
-     collapse as part of the leave animation. */
+  /* Horizontal strip of online users. Collapsed state clips overflow and
+     the JS counts the hidden rows into the "+N more" button. Expanded
+     state lets the list wrap to multiple lines. */
   #users-list {
     list-style: none;
     margin: 0;
-    padding: 6px 12px;
+    padding: 0;
     display: flex;
     flex-direction: row;
-    overflow-x: auto;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
   }
-  #users-list:empty { display: none; }
+  #users-list.expanded {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    overflow: visible;
+  }
   #users-list li {
     font-size: 12px;
     font-weight: 600;
@@ -79,10 +79,13 @@ export const HTML = `<!DOCTYPE html>
     overflow: hidden;
     max-width: 200px;
     margin-right: 12px;
+    /* Keep natural width so #users-list's overflow:hidden actually has
+       something to clip; without this the items would just shrink into
+       the container and the "+N more" count would always be 0. */
+    flex-shrink: 0;
     transition: transform 260ms ease, opacity 220ms ease,
                 max-width 260ms ease, margin-right 260ms ease;
   }
-  #users-list li:last-child { margin-right: 0; }
   /* Joining: start below the bar (translateY down) with no opacity, then
      slide up into place. Leaving reverses that and also collapses the
      item's width + margin so neighbors close the gap smoothly. */
@@ -97,6 +100,28 @@ export const HTML = `<!DOCTYPE html>
      the compact horizontal strip it's noise — let the click-to-open user
      modal surface it instead. */
   #users-list .fp { display: none; }
+
+  #users-more {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #users-more:hover { color: var(--text); }
+
+  #chat-status #build-badge {
+    color: var(--text-muted);
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #chat-status #build-badge:hover { color: var(--text); }
 
   /* --- Icon buttons ------------------------------------------------------ */
   .icon-btn {
@@ -185,17 +210,14 @@ export const HTML = `<!DOCTYPE html>
     border: 1px solid var(--border);
     border-radius: 4px;
   }
-  #input-bar #profile-btn { background: var(--bg); color: var(--text); }
-  #input-bar #profile-btn:hover { background: var(--border); }
   #input-bar #send-btn { border-color: var(--accent); }
 
   /* --- @mention autocomplete -------------------------------------------- */
   #mention-suggest {
     position: absolute;
     bottom: calc(100% + 4px);
-    /* Aligned with the left edge of #msg-input, which now sits after the
-       profile icon button inside the input bar. */
-    left: 54px;
+    /* Aligned with the left edge of #msg-input (input-bar padding-left). */
+    left: 12px;
     min-width: 180px;
     max-width: 280px;
     max-height: 220px;
@@ -389,6 +411,12 @@ export const HTML = `<!DOCTYPE html>
     position: relative;
   }
   #profile-box h3 { font-size: 15px; font-weight: 600; }
+  #profile-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: -8px;
+  }
+  #profile-meta .fp { font-size: 11px; margin: 0; }
   #profile-close {
     position: absolute;
     top: 8px;
@@ -633,15 +661,13 @@ export const HTML = `<!DOCTYPE html>
     <div id="main-col">
       <div id="conn-status">Reconnecting...</div>
       <div id="messages"></div>
-      <div id="status-line">
+      <div id="chat-status">
+        <ul id="users-list"></ul>
+        <button id="users-more" type="button" style="display:none;"></button>
         <a id="build-badge" href="#" title="Click to verify this build">SB</a>
       </div>
-      <ul id="users-list"></ul>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
-        <button class="btn icon-btn" id="profile-btn" title="Profile" aria-label="Profile">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        </button>
         <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
         <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -691,6 +717,9 @@ export const HTML = `<!DOCTYPE html>
   <div id="profile-box">
     <button type="button" id="profile-close" aria-label="Close">&times;</button>
     <h3>Edit Profile</h3>
+    <div id="profile-meta">
+      Joined <span id="profile-joined">—</span> · <span id="profile-fp" class="fp">—</span>
+    </div>
     <div>
       <label for="username-input">Username</label>
       <div class="color-row">
@@ -783,9 +812,11 @@ export const HTML = `<!DOCTYPE html>
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
   const usersList   = document.getElementById('users-list');
+  const usersMore   = document.getElementById('users-more');
   const logoutBtn   = document.getElementById('profile-logout');
-  const profileBtn  = document.getElementById('profile-btn');
   const profileModal = document.getElementById('profile-modal');
+  const profileJoined = document.getElementById('profile-joined');
+  const profileFp   = document.getElementById('profile-fp');
   const usernameInput = document.getElementById('username-input');
   const colorInput  = document.getElementById('color-input');
   const colorHex    = document.getElementById('color-hex');
@@ -811,6 +842,8 @@ export const HTML = `<!DOCTYPE html>
   let myUsername = '';
   let myColor = '';
   let myEmail = null;
+  let myFingerprint = null;
+  let myCreatedAt = null;
   let isAuthed = false;
   let reconnectTimer = null;
   let reconnectDelay = 1000;
@@ -977,6 +1010,8 @@ export const HTML = `<!DOCTYPE html>
         myUsername = data.username;
         myColor = data.color;
         myEmail = data.email || null;
+        myFingerprint = data.fingerprint || null;
+        myCreatedAt = data.created_at || null;
         showChat();
         return;
       }
@@ -1663,18 +1698,22 @@ export const HTML = `<!DOCTYPE html>
     }
   });
 
-  profileBtn.addEventListener('click', () => {
+  function openProfileModal() {
     usernameInput.value = myUsername;
     colorInput.value = myColor.startsWith('#') ? myColor : '#5b8def';
     colorHex.value = colorInput.value;
     usernameInput.style.color = colorInput.value;
     notifyToggle.checked = notifyOn;
+    profileJoined.textContent = myCreatedAt
+      ? new Date(myCreatedAt).toLocaleDateString()
+      : '—';
+    profileFp.textContent = myFingerprint ? '#' + myFingerprint : '—';
     updateColorWarn();
     renderEmail();
     emailActions.style.display = '';
     renderPasskeys();
     profileModal.classList.add('open');
-  });
+  }
 
   profileClose.addEventListener('click', () => profileModal.classList.remove('open'));
   profileModal.addEventListener('click', (e) => {
@@ -1860,6 +1899,12 @@ export const HTML = `<!DOCTYPE html>
   const userClose = document.getElementById('user-close');
 
   async function showUser(username) {
+    // Clicking your own name opens the editable profile modal instead
+    // of the read-only user-info modal.
+    if (username && username === myUsername) {
+      openProfileModal();
+      return;
+    }
     umName.textContent = username;
     umName.style.color = '';
     umFp.textContent = '';
@@ -1953,7 +1998,58 @@ export const HTML = `<!DOCTYPE html>
         requestAnimationFrame(() => li.classList.remove('entering'));
       });
     }
+
+    // Always render the signed-in user first so they can spot themselves
+    // without scanning the list.
+    const ownLi = myUsername ? userLiByName.get(myUsername) : null;
+    if (ownLi && usersList.firstChild !== ownLi) {
+      usersList.insertBefore(ownLi, usersList.firstChild);
+    }
+
+    updateUserOverflow();
   }
+
+  // Count how many user chips overflow the collapsed row's visible width
+  // and surface them as "+N more". Clicking the chip expands the row so
+  // it wraps and shows everyone.
+  function updateUserOverflow() {
+    if (usersList.classList.contains('expanded')) {
+      usersMore.style.display = 'none';
+      return;
+    }
+    // Show the button with a placeholder so its width is included while
+    // we measure which rows overflow.
+    usersMore.style.display = '';
+    usersMore.textContent = '+0 more';
+    const listRect = usersList.getBoundingClientRect();
+    const lis = usersList.querySelectorAll('li:not(.leaving)');
+    let hidden = 0;
+    for (const li of lis) {
+      const r = li.getBoundingClientRect();
+      if (r.right > listRect.right + 0.5) hidden++;
+    }
+    if (hidden > 0) {
+      usersMore.textContent = '+' + hidden + ' more';
+    } else {
+      usersMore.style.display = 'none';
+    }
+  }
+
+  usersMore.addEventListener('click', (e) => {
+    e.stopPropagation();
+    usersList.classList.toggle('expanded');
+    updateUserOverflow();
+  });
+
+  // Tap/click outside the row collapses the expanded list.
+  document.addEventListener('click', (e) => {
+    if (!usersList.classList.contains('expanded')) return;
+    if (e.target.closest('#chat-status')) return;
+    usersList.classList.remove('expanded');
+    updateUserOverflow();
+  });
+
+  window.addEventListener('resize', updateUserOverflow);
 
   // --- Boot ---
   loadVersion();

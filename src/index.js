@@ -1040,6 +1040,7 @@ async function handleRequest(request, env) {
         passkeyCount,
         hasEmail: !!email,
         email,
+        created_at: profile.created_at || null,
       });
     }
 
