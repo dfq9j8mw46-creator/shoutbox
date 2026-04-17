@@ -13,25 +13,59 @@ const MSG_BURST = 5;
 const MSG_WINDOW_MS = 3000;
 const KICK_STRIKES = 3;
 
-// Zalgo guard: cap how many combining marks (Unicode "Mark" category)
-// can stack on a single base character. NFC normalization first collapses
-// canonical-equivalent base+combiner sequences into precomposed forms so
-// legitimate accented text (café, naïve, etc.) survives at a cost of 0
-// marks. Anything left is a genuine combining stack — two is enough for
-// every real language I can find; beyond that it's Zalgo spam that
-// overflows line heights and breaks layout for everyone in the room.
+// Cap concurrent WebSocket connections one identity can hold open, so a
+// signed-in client can't fan out a broadcast amplifier or pin DO memory.
+// Five allows the common case (browser tab + mobile tab + stale reconnect)
+// without being user-hostile.
+const MAX_SOCKETS_PER_IDENTITY = 5;
+
+// Cap how many distinct @mentions a single message is allowed to carry.
+// Prevents a "@everyone"-style notification flood across the whole room.
+const MAX_MENTIONS_PER_MSG = 5;
+
+// Sanitize incoming message text against common chat-abuse vectors:
+//
+//  - Zalgo: cap combining marks (\p{M}) per base character. NFC first
+//    collapses canonical equivalents, so café/naïve survive at 0 marks.
+//    Two is enough for every real-world language (Vietnamese stacked
+//    tones, Thai, etc.); more is Zalgo spam that overflows line height.
+//  - Control chars (\p{Cc}): break rendering, can embed NUL/BEL. We keep
+//    \n \r \t so multi-line / tabbed content still works, though clients
+//    typically collapse them anyway.
+//  - Format chars (\p{Cf}): covers bidi overrides (U+202A-E, U+2066-9),
+//    zero-widths (U+200B-F, U+FEFF, U+2060), and Unicode tag chars
+//    (U+E0000-E007F) used for impersonation, invisible steganography,
+//    and flipping surrounding UI text RTL.
+// Strip the @ prefix on any mentions beyond the Nth distinct recipient
+// in a single message so a sender can't ping the entire room in one
+// shot. The name text stays (no data loss), it just no longer renders
+// as a mention and doesn't fire a notification.
+function capMentions(s) {
+  const seen = new Set();
+  return s.replace(/@([a-zA-Z0-9_\-]{1,20})/g, (match, name) => {
+    const lower = name.toLowerCase();
+    if (seen.has(lower)) return match;
+    if (seen.size >= MAX_MENTIONS_PER_MSG) return name;
+    seen.add(lower);
+    return match;
+  });
+}
+
 const MAX_COMBINING_MARKS = 2;
-function limitDiacritics(s) {
+function sanitizeText(s) {
   s = s.normalize('NFC');
   let out = '';
   let n = 0;
   for (const ch of s) {
+    // Drop Cc (except \n \r \t) and all Cf.
+    if (/\p{Cf}/u.test(ch)) continue;
+    if (/\p{Cc}/u.test(ch) && ch !== '\n' && ch !== '\r' && ch !== '\t') continue;
     if (/\p{M}/u.test(ch)) {
       if (n < MAX_COMBINING_MARKS) { out += ch; n++; }
-    } else {
-      out += ch;
-      n = 0;
+      continue;
     }
+    out += ch;
+    n = 0;
   }
   return out;
 }
@@ -105,6 +139,20 @@ export class ChatRoom {
     const color = request.headers.get('X-Chat-Color') || '#888888';
     const fingerprint = request.headers.get('X-Chat-Fingerprint') || '';
 
+    // Per-identity concurrent-socket cap. Without this, a signed-in
+    // client could open an unbounded fan of WebSockets and both pin DO
+    // memory and multiply broadcasts for the whole room.
+    if (fingerprint) {
+      let existing = 0;
+      for (const ws of this.state.getWebSockets()) {
+        const a = ws.deserializeAttachment() || {};
+        if (a.fingerprint === fingerprint) existing++;
+      }
+      if (existing >= MAX_SOCKETS_PER_IDENTITY) {
+        return new Response('too many connections', { status: 429 });
+      }
+    }
+
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
@@ -126,7 +174,7 @@ export class ChatRoom {
     const attachment = ws.deserializeAttachment();
 
     if (data.type === 'msg' && typeof data.text === 'string') {
-      const text = limitDiacritics(data.text.trim()).slice(0, 500);
+      const text = capMentions(sanitizeText(data.text.trim())).slice(0, 500);
       if (!text) return;
 
       const now = Date.now();

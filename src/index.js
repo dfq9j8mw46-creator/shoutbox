@@ -1101,6 +1101,13 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname === '/auth/verify-code' && request.method === 'POST') {
+      // Per-IP limiter on top of the 5-attempts-per-code counter. Without
+      // it, an attacker rotating emails isn't bounded at the IP layer —
+      // they get 5 fresh guesses for every (email, 10m) pair.
+      const verifyIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const verifyIpRl = await rateLimit(env, `verify_code_ip_rl:${verifyIpHash}`, 20, 60 * 60);
+      if (!verifyIpRl.ok) return json({ error: 'Too many attempts from this IP - try later' }, 429);
+
       const body = await request.json().catch(() => ({}));
       const email = (body.email || '').trim().toLowerCase();
       const code = (body.code || '').trim();
