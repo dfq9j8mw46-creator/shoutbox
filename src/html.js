@@ -517,6 +517,27 @@ export const HTML = `<!DOCTYPE html>
   #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
+  /* Back icon button: small glass pill matching the rest of the auth UI,
+     muted by default and brightening on hover. */
+  #auth-back {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    padding: 4px 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  #auth-back:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: var(--text);
+  }
+  #auth-back svg { display: block; }
 /* --- Auth button loading state + resend row --------------------------- */
   #auth-screen .btn[disabled] {
     opacity: .65;
@@ -1036,7 +1057,9 @@ export const HTML = `<!DOCTYPE html>
     <a href="#" id="use-passkey" style="display:none;">Use passkey instead</a>
     <a href="#" id="use-recovery">Use recovery code</a>
     <span id="alts-sep2">·</span>
-    <a href="#" id="auth-back" style="display:none;">Back</a>
+    <button type="button" id="auth-back" aria-label="Back" style="display:none;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+    </button>
   </div>
 </div>
 
@@ -1743,7 +1766,10 @@ export const HTML = `<!DOCTYPE html>
     // an email, code, signup name, or recovery code, surfacing it again is
     // just clutter.
     useRecovery.style.display = onPrimary ? 'inline' : 'none';
-    altsSep2.style.display = onPrimary ? 'none' : 'inline';
+    // Separator only when there's actually a sibling visible to its left
+    // (the "Use passkey instead" link). On signup/recovery there's just
+    // the back arrow, so the dot would be orphaned.
+    altsSep2.style.display = ((onEmail || which === 'code') && pkSupported) ? 'inline' : 'none';
     // Re-enable inputs that a previous setLoading() may have disabled.
     [authForm, codeForm, signupForm, recoveryForm].forEach((f) => {
       f.querySelectorAll('input,button').forEach((el) => { el.disabled = false; el.classList.remove('loading'); });
@@ -1764,8 +1790,12 @@ export const HTML = `<!DOCTYPE html>
   async function doPasskeySignin() {
     if (!pkSupported) { setStatus('Passkeys not supported on this browser', true); return; }
     abortConditionalPasskey();
-    setLoading(pkSigninBtn, true);
-    setStatus('Waiting for passkey...');
+    // Show the wait state inside the button instead of the meta area
+    // below — keeps the user's eye on the action they just took.
+    const originalLabel = pkSigninBtn.textContent;
+    pkSigninBtn.textContent = 'Waiting for passkey...';
+    pkSigninBtn.disabled = true;
+    setStatus('');
     try {
       const startRes = await fetch('/auth/webauthn/auth/start', { method: 'POST' });
       const startData = await startRes.json();
@@ -1799,7 +1829,8 @@ export const HTML = `<!DOCTYPE html>
       setStatus((e && e.message) || 'Sign-in failed', true);
       if (authScreen.style.display !== 'none') startConditionalPasskey();
     } finally {
-      setLoading(pkSigninBtn, false);
+      pkSigninBtn.textContent = originalLabel;
+      pkSigninBtn.disabled = false;
     }
   }
 
