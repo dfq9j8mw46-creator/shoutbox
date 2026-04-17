@@ -460,13 +460,22 @@ export const HTML = `<!DOCTYPE html>
     justify-content: center;
     gap: 16px;
     width: 100%;
-    /* Reservation absorbs the worst-case form (two-input recovery)
-       plus the 44px back/email circle below, so the heading above and
-       alts below stay anchored across every state. */
-    min-height: 150px;
+  }
+  /* Form area reserves the height of the tallest form (two-input
+     recovery) so the icon-circle below it lives at the same y across
+     every state — the back button on non-primary screens lands in the
+     same spot the email circle occupies on primary. The visible form
+     is centered within the reserved space. */
+  #auth-form-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 80px;
   }
   @media (max-width: 640px) {
-    #auth-stack { min-height: 200px; }
+    #auth-form-area { min-height: 100px; }
   }
   #auth-primary { display: flex; gap: 8px; }
   /* Glass button treatment matches the chat-input pill (#input-wrap):
@@ -1034,33 +1043,31 @@ export const HTML = `<!DOCTYPE html>
   <h1>Shoutbox</h1>
 
   <div id="auth-stack">
-    <div id="auth-primary" style="display:none;">
-      <button class="btn btn-primary" id="pk-signin-btn">Use passkey</button>
-    </div>
-
-    <button type="button" id="use-email-btn" aria-label="Sign in with email" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg></button>
-    <button type="button" id="auth-back" aria-label="Back" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
-
-    <form id="auth-form" style="display:none;">
-      <div id="email-pill" class="input-pill">
-        <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
-        <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-        </button>
+    <div id="auth-form-area">
+      <div id="auth-primary" style="display:none;">
+        <button class="btn btn-primary" id="pk-signin-btn">Use passkey</button>
       </div>
-    </form>
 
-    <form id="signup-form" style="display:none;">
-      <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
-      <button type="submit" class="btn btn-primary">Create passkey</button>
-    </form>
+      <form id="auth-form" style="display:none;">
+        <div id="email-pill" class="input-pill">
+          <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
+          <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+        </div>
+      </form>
 
-    <form id="code-form" style="display:none;">
-      <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
-      <button type="submit" class="btn btn-primary">Sign in</button>
-    </form>
+      <form id="signup-form" style="display:none;">
+        <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
+        <button type="submit" class="btn btn-primary">Create passkey</button>
+      </form>
 
-    <form id="recovery-form" style="display:none;">
+      <form id="code-form" style="display:none;">
+        <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+        <button type="submit" class="btn btn-primary">Sign in</button>
+      </form>
+
+      <form id="recovery-form" style="display:none;">
       <input type="text" id="recovery-user" placeholder="username" maxlength="20" autocomplete="username" required>
       <div id="recovery-pill" class="input-pill">
         <input type="text" id="recovery-code" placeholder="XXXX-XXXX-XXXX" maxlength="14" autocomplete="off" required>
@@ -1069,6 +1076,10 @@ export const HTML = `<!DOCTYPE html>
         </button>
       </div>
     </form>
+    </div>
+
+    <button type="button" id="use-email-btn" aria-label="Sign in with email" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg></button>
+    <button type="button" id="auth-back" aria-label="Back" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
   </div>
 
   <div id="auth-meta">
@@ -1966,7 +1977,9 @@ export const HTML = `<!DOCTYPE html>
     showAuthForm('email');
     setStatus('');
     devLink.innerHTML = '';
-    emailInput.focus();
+    // Skip auto-focus on touch viewports so the on-screen keyboard
+    // doesn't open the moment the user lands on this screen.
+    if (!matchMedia('(max-width: 640px)').matches) emailInput.focus();
   });
   useRecovery.addEventListener('click', (e) => {
     e.preventDefault();
