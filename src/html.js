@@ -497,28 +497,38 @@ export const HTML = `<!DOCTYPE html>
     background: rgba(91, 141, 239, 0.30);
     border-color: rgba(91, 141, 239, 0.65);
   }
-  /* Smaller, ghost-style toggle to opt into the email flow when passkeys
-     are the primary path. Less visual weight than the main auth buttons
-     so it reads as a fallback, not a parallel choice. */
+  /* Email entry as a glass circle to opt into the email flow. Same
+     translucent surface, soft border, and backdrop blur as the input
+     pills so it reads as part of the same theme; circular shape signals
+     it's an alternative action, not a primary form. */
   #use-email-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
     color: var(--text-muted);
-    padding: 4px 14px;
-    font-size: 12px;
+    padding: 0;
     cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   }
   #use-email-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.22);
     color: var(--text);
-    border-color: rgba(255, 255, 255, 0.18);
   }
+  #use-email-btn svg { display: block; }
   #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
-  /* Back icon button: small glass pill matching the rest of the auth UI,
-     muted by default and brightening on hover. */
+  /* Small back icon button in the auth-alts footer row. Glass pill,
+     muted by default, brightens on hover. */
   #auth-back {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1013,10 +1023,12 @@ export const HTML = `<!DOCTYPE html>
 
   <div id="auth-stack">
     <div id="auth-primary" style="display:none;">
-      <button class="btn btn-primary" id="pk-signin-btn">Continue with passkey</button>
+      <button class="btn btn-primary" id="pk-signin-btn">Use passkey</button>
     </div>
 
-    <button type="button" id="use-email-btn" style="display:none;">Sign in with email</button>
+    <button type="button" id="use-email-btn" aria-label="Sign in with email" style="display:none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg>
+    </button>
 
     <form id="auth-form" style="display:none;">
       <div id="email-pill" class="input-pill">
@@ -1054,12 +1066,10 @@ export const HTML = `<!DOCTYPE html>
     <div id="dev-link"></div>
   </div>
   <div id="auth-alts">
-    <a href="#" id="use-passkey" style="display:none;">Use passkey instead</a>
-    <a href="#" id="use-recovery">Use recovery code</a>
-    <span id="alts-sep2">·</span>
     <button type="button" id="auth-back" aria-label="Back" style="display:none;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
     </button>
+    <a href="#" id="use-recovery" style="display:none;">Use recovery code</a>
   </div>
 </div>
 
@@ -1209,9 +1219,7 @@ export const HTML = `<!DOCTYPE html>
   const signupForm  = document.getElementById('signup-form');
   const signupName  = document.getElementById('signup-name');
   const pkSigninBtn = document.getElementById('pk-signin-btn');
-  const usePasskey  = document.getElementById('use-passkey');
   const useRecovery = document.getElementById('use-recovery');
-  const altsSep2    = document.getElementById('alts-sep2');
   const useEmailBtn = document.getElementById('use-email-btn');
   const resendRow   = document.getElementById('resend-row');
   const recoveryForm = document.getElementById('recovery-form');
@@ -1236,6 +1244,14 @@ export const HTML = `<!DOCTYPE html>
   const rcRegenBtn  = document.getElementById('rc-regen-btn');
   const revokeOthersBtn = document.getElementById('revoke-others-btn');
   let pendingEmail  = '';
+  // Tracks whether the user has had a sign-in attempt fail in this
+  // visit. The recovery-code escape hatch is hidden until this flips,
+  // so the empty primary screen isn't cluttered with fallback links.
+  let loginAttemptFailed = false;
+  function markLoginFailed() {
+    loginAttemptFailed = true;
+    useRecovery.style.display = 'inline';
+  }
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
@@ -1482,6 +1498,9 @@ export const HTML = `<!DOCTYPE html>
   function showAuth() {
     isAuthed = false;
     resetConnectionState();
+    // Fresh visit: reset the failed-login flag so the recovery-code
+    // escape hatch goes back to hidden until a sign-in fails again.
+    loginAttemptFailed = false;
     // Reset any height the iOS visualViewport pin wrote onto chatScreen;
     // otherwise the stale inline height lingers on the hidden element and
     // can leak back in on a subsequent sign-in before pin() re-fires.
@@ -1757,19 +1776,14 @@ export const HTML = `<!DOCTYPE html>
     signupForm.style.display = which === 'signup' ? 'flex' : 'none';
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
-    authBack.style.display = onPrimary ? 'none' : 'inline';
-    // "Use passkey instead" escapes back to the primary view from the
-    // email or code flows; pointless when we're already on primary.
-    usePasskey.style.display = ((onEmail || which === 'code') && pkSupported) ? 'inline' : 'none';
-    // "Use recovery code" only makes sense as an alternative when the user
-    // is staring at the primary login choice; once they've started entering
-    // an email, code, signup name, or recovery code, surfacing it again is
-    // just clutter.
-    useRecovery.style.display = onPrimary ? 'inline' : 'none';
-    // Separator only when there's actually a sibling visible to its left
-    // (the "Use passkey instead" link). On signup/recovery there's just
-    // the back arrow, so the dot would be orphaned.
-    altsSep2.style.display = ((onEmail || which === 'code') && pkSupported) ? 'inline' : 'none';
+    // Back icon button sits in the auth-alts footer row on every
+    // non-primary state.
+    authBack.style.display = onPrimary ? 'none' : 'inline-flex';
+    // "Use recovery code" is the escape hatch for users who can't get
+    // their passkey or email working. Hidden until a login attempt has
+    // actually failed (loginAttemptFailed flag), at which point it
+    // surfaces on every state until a fresh visit clears it.
+    useRecovery.style.display = loginAttemptFailed ? 'inline' : 'none';
     // Re-enable inputs that a previous setLoading() may have disabled.
     [authForm, codeForm, signupForm, recoveryForm].forEach((f) => {
       f.querySelectorAll('input,button').forEach((el) => { el.disabled = false; el.classList.remove('loading'); });
@@ -1808,6 +1822,7 @@ export const HTML = `<!DOCTYPE html>
         // has no passkey for this site or just cancelled the prompt.
         // Either way, surface the signup form so they can pick a
         // username and create one — they can hit Back to retry sign-in.
+        markLoginFailed();
         showAuthForm('signup');
         setStatus('No passkey found - pick a username to create one.');
         signupName.focus();
@@ -1827,6 +1842,7 @@ export const HTML = `<!DOCTYPE html>
       // Server-side failure (network, /auth/webauthn/* error). Stay on
       // primary so the user can retry the same button.
       setStatus((e && e.message) || 'Sign-in failed', true);
+      markLoginFailed();
       if (authScreen.style.display !== 'none') startConditionalPasskey();
     } finally {
       pkSigninBtn.textContent = originalLabel;
@@ -1887,6 +1903,7 @@ export const HTML = `<!DOCTYPE html>
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatus(data.error || 'Something went wrong', true);
+        markLoginFailed();
         return;
       }
       setStored('auth.lastEmail', email);
@@ -1936,13 +1953,6 @@ export const HTML = `<!DOCTYPE html>
       return;
     }
     doPasskeySignup(n);
-  });
-  usePasskey.addEventListener('click', (e) => {
-    e.preventDefault();
-    pendingEmail = '';
-    showAuthForm('primary');
-    setStatus('');
-    devLink.innerHTML = '';
   });
   useEmailBtn.addEventListener('click', () => {
     showAuthForm('email');
@@ -2040,6 +2050,7 @@ export const HTML = `<!DOCTYPE html>
         checkAuth();
       } else {
         setStatus(data.error || 'Invalid code', true);
+        markLoginFailed();
       }
     } catch {
       setStatus('Network error', true);
