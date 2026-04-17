@@ -92,6 +92,20 @@ jobs:
           \`\`\`
           EOF
           )
-          gh release create "$TAG" "${{ steps.hash.outputs.bundle }}" dist/live-script.js \
-            --title "Build $TAG" \
-            --notes "$NOTES"
+          # Retry around transient GitHub API errors (e.g. 502/504 on
+          # releases). On failure we also scrub any partial release/tag
+          # so the retry isn't blocked by a "tag already exists" error.
+          attempts=0
+          until gh release create "$TAG" \
+              "${{ steps.hash.outputs.bundle }}" dist/live-script.js \
+              --title "Build $TAG" \
+              --notes "$NOTES"; do
+            attempts=$((attempts + 1))
+            if [ $attempts -ge 3 ]; then
+              echo "gh release create failed after $attempts attempts, giving up."
+              exit 1
+            fi
+            echo "gh release create failed (attempt $attempts/3); cleaning up and retrying in 15s..."
+            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+            sleep 15
+          done
