@@ -1025,7 +1025,8 @@ export const HTML = `<!DOCTYPE html>
     authForm.style.display = which === 'email' ? 'flex' : 'none';
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
-    authBack.style.display = which === 'primary' ? 'none' : 'inline';
+    const onPrimary = which === 'primary';
+    authBack.style.display = onPrimary ? 'none' : 'inline';
     // Only show the email plea on the initial email-entry page.
     emailPlea.style.display = which === 'email' ? 'block' : 'none';
     // Don't offer "Use email instead" once we're already in the email/code flow;
@@ -1034,9 +1035,9 @@ export const HTML = `<!DOCTYPE html>
     useEmail.style.display = inEmailFlow ? 'none' : 'inline';
     usePasskey.style.display = inEmailFlow ? 'inline' : 'none';
     altsSep.style.display = 'inline';
-    // Hide the second separator when recovery is already shown/hidden in ways
-    // that make it dangle; "Back" being the trailing link covers this for us.
-    altsSep2.style.display = 'inline';
+    // Second separator sits between "Use recovery code" and "Back"; hide it
+    // on the primary screen so there's no dangling dot when Back is absent.
+    altsSep2.style.display = onPrimary ? 'none' : 'inline';
   }
 
   async function doPasskeySignin() {
