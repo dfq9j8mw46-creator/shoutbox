@@ -28,27 +28,17 @@ export const HTML = `<!DOCTYPE html>
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
-  /* --- Header bar -------------------------------------------------------- */
-  #header {
+  /* --- Sidebar title (top of users panel) -------------------------------- */
+  #sidebar-title {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    padding: 8px 12px;
-    background: var(--surface);
+    gap: 8px;
+    padding: 10px 14px 8px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
-    gap: 8px;
   }
-  #header .left { display: flex; align-items: center; gap: 10px; }
-  #header h1 { font-size: 15px; font-weight: 600; letter-spacing: .5px; }
-  #online-badge {
-    font-size: 11px;
-    color: var(--text-muted);
-    background: var(--bg);
-    padding: 2px 8px;
-    border-radius: 10px;
-  }
-  #header .right { display: flex; align-items: center; gap: 6px; }
+  #sidebar-title h1 { font-size: 14px; font-weight: 600; letter-spacing: .5px; }
 
   /* --- Chat body + users panel ------------------------------------------ */
   #chat-body {
@@ -93,7 +83,6 @@ export const HTML = `<!DOCTYPE html>
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  #online-badge { cursor: default; }
 
   @media (max-width: 640px) {
     #chat-body { flex-direction: column; }
@@ -109,8 +98,10 @@ export const HTML = `<!DOCTYPE html>
       max-height: 33vh;
       align-self: auto;
     }
-    #users-panel.collapsed-mobile { display: none; }
-    #online-badge { cursor: pointer; }
+    /* Keep the title bar visible when collapsed so users have a tap target
+       to expand again; only the user list folds away. */
+    #users-panel.collapsed-mobile #users-list { display: none; }
+    #sidebar-title { cursor: pointer; }
   }
 
   /* --- Icon buttons ------------------------------------------------------ */
@@ -193,7 +184,9 @@ export const HTML = `<!DOCTYPE html>
   #mention-suggest {
     position: absolute;
     bottom: calc(100% + 4px);
-    left: 12px;
+    /* Aligned with the left edge of #msg-input, which now sits after the
+       profile icon button inside the input bar. */
+    left: 56px;
     min-width: 180px;
     max-width: 280px;
     max-height: 220px;
@@ -591,32 +584,24 @@ export const HTML = `<!DOCTYPE html>
 
 <!-- Chat screen (hidden until authed) -->
 <div id="chat-screen" style="display:none; flex-direction:column; height:100dvh;">
-  <div id="header">
-    <div class="left">
-      <h1>Shoutbox</h1>
-      <span id="online-badge">0 online</span>
-      <a id="build-badge" href="#" title="Click to verify this build"></a>
-    </div>
-    <div class="right">
-      <button class="btn icon-btn" id="profile-btn" title="Profile" aria-label="Profile">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      </button>
-      <button class="btn icon-btn" id="logout-btn" title="Logout" aria-label="Logout">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </button>
-    </div>
-  </div>
   <div id="chat-body">
     <div id="main-col">
       <div id="conn-status">Reconnecting...</div>
       <div id="messages"></div>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
+        <button class="btn icon-btn" id="profile-btn" title="Profile" aria-label="Profile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </button>
         <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
         <button class="btn btn-primary" id="send-btn">Send</button>
       </div>
     </div>
     <aside id="users-panel">
+      <div id="sidebar-title">
+        <h1>Shoutbox</h1>
+        <a id="build-badge" href="#" title="Click to verify this build"></a>
+      </div>
       <ul id="users-list"></ul>
     </aside>
   </div>
@@ -687,6 +672,7 @@ export const HTML = `<!DOCTYPE html>
     </div>
     <div class="actions">
       <button class="btn btn-danger" id="profile-delete">Delete account</button>
+      <button class="btn" id="profile-logout">Log out</button>
       <span class="spacer"></span>
       <button class="btn" id="profile-cancel">Cancel</button>
       <button class="btn btn-primary" id="profile-save">Save</button>
@@ -733,10 +719,10 @@ export const HTML = `<!DOCTYPE html>
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
-  const onlineBadge = document.getElementById('online-badge');
   const usersList   = document.getElementById('users-list');
   const usersPanel  = document.getElementById('users-panel');
-  const logoutBtn   = document.getElementById('logout-btn');
+  const sidebarTitle = document.getElementById('sidebar-title');
+  const logoutBtn   = document.getElementById('profile-logout');
   const profileBtn  = document.getElementById('profile-btn');
   const profileModal = document.getElementById('profile-modal');
   const usernameInput = document.getElementById('username-input');
@@ -1285,7 +1271,6 @@ export const HTML = `<!DOCTYPE html>
       }
 
       if (data.type === 'online') {
-        onlineBadge.textContent = data.count + ' online';
         const users = data.users || [];
         setOnlineUsers(users);
         renderUsers(users);
@@ -1647,6 +1632,7 @@ export const HTML = `<!DOCTYPE html>
 
   // --- Logout ---
   logoutBtn.addEventListener('click', async () => {
+    profileModal.classList.remove('open');
     await fetch('/auth/logout', { method: 'POST' });
     showAuth();
   });
@@ -1758,8 +1744,11 @@ export const HTML = `<!DOCTYPE html>
       usersList.appendChild(li);
     }
   }
-  // Mobile: toggle the user panel via the "N online" badge.
-  onlineBadge.addEventListener('click', () => {
+  // Mobile: tap the sidebar title to collapse/expand the user list.
+  // The build badge lives inside the title — let its own click handler
+  // (verify modal) run instead of toggling the panel.
+  sidebarTitle.addEventListener('click', (e) => {
+    if (e.target.closest('#build-badge')) return;
     if (window.matchMedia('(max-width: 640px)').matches) {
       usersPanel.classList.toggle('collapsed-mobile');
     }
