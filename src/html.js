@@ -444,22 +444,37 @@ export const HTML = `<!DOCTYPE html>
     height: 100dvh;
     flex-direction: column;
     gap: 16px;
+    padding: 16px;
   }
   #auth-screen h2 { font-size: 13px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
   #auth-primary { display: flex; gap: 8px; }
   #auth-primary .btn { padding: 8px 14px; font-size: 13px; }
+  #auth-or {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    width: 280px;
+    max-width: 100%;
+  }
+  #auth-or::before, #auth-or::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
   #email-plea {
     max-width: 320px;
-    color: #ff6b6b;
+    color: var(--text-muted);
     font-size: 13px;
     line-height: 1.5;
     text-align: center;
-    border: 1px solid rgba(255, 107, 107, .35);
-    background: rgba(255, 107, 107, .08);
-    padding: 8px 12px;
-    border-radius: 6px;
   }
+  #email-plea strong { color: var(--text); font-weight: 600; }
   #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
@@ -476,6 +491,53 @@ export const HTML = `<!DOCTYPE html>
     outline: none;
   }
   #signup-form input:focus, #recovery-form input:focus { border-color: var(--accent); }
+  /* --- Auth button loading state + resend row --------------------------- */
+  #auth-screen .btn[disabled] {
+    opacity: .65;
+    cursor: not-allowed;
+  }
+  #auth-screen .btn.loading {
+    position: relative;
+    color: transparent !important;
+  }
+  #auth-screen .btn.loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    color: #fff;
+    animation: auth-spin .7s linear infinite;
+  }
+  #auth-screen .btn.loading:not(.btn-primary)::after { color: var(--text); }
+  @keyframes auth-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    #auth-screen .btn.loading::after { animation-duration: 2s; }
+  }
+  #resend-row {
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    min-height: 18px;
+  }
+  #resend-row a { color: var(--accent); text-decoration: none; }
+  #resend-row a:hover { text-decoration: underline; }
+  #resend-row a[aria-disabled="true"] { color: var(--text-muted); pointer-events: none; cursor: default; text-decoration: none; }
+  /* Larger tap targets on touch screens. The global iOS rule above already
+     bumps input font to 16px to suppress focus-zoom; this widens the auth
+     buttons to the 44px minimum recommended by WCAG/HIG. */
+  @media (max-width: 640px) {
+    #auth-screen .btn { min-height: 44px; padding-left: 16px; padding-right: 16px; }
+    #auth-screen #auth-primary { flex-direction: column; width: 280px; max-width: 100%; }
+    #auth-screen #auth-primary .btn { width: 100%; }
+  }
 
   /* --- Recovery codes modal --------------------------------------------- */
   #rc-modal {
@@ -549,7 +611,7 @@ export const HTML = `<!DOCTYPE html>
   }
   .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  #auth-form, #code-form { display: flex; gap: 8px; }
+  #auth-form, #code-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   #auth-form input, #code-form input {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -562,9 +624,20 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-form input:focus, #code-form input:focus { border-color: var(--accent); }
   #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  #auth-status { color: var(--text-muted); font-size: 13px; min-height: 18px; }
+  #auth-status { color: var(--text-muted); font-size: 13px; min-height: 18px; text-align: center; max-width: 320px; }
+  #auth-status.error { color: #ff6b6b; }
   #dev-link { margin-top: 8px; }
   #dev-link a { color: var(--accent); font-size: 13px; }
+  @media (max-width: 640px) {
+    #auth-screen #auth-form input,
+    #auth-screen #code-form input,
+    #auth-screen #signup-form input,
+    #auth-screen #recovery-form input {
+      width: 100%;
+      max-width: 320px;
+      min-height: 44px;
+    }
+  }
 
   /* --- Profile modal ----------------------------------------------------- */
   #profile-modal {
@@ -768,27 +841,30 @@ export const HTML = `<!DOCTYPE html>
      login page on refresh when the user is already signed in) -->
 <div id="auth-screen" style="display:none;">
   <h1>Shoutbox</h1>
-  <p id="auth-intro">Sign in with a passkey - no email, no password.</p>
+  <p id="auth-intro">Sign in with a passkey - or with a one-time code by email.</p>
 
-  <div id="auth-primary">
+  <form id="auth-form" style="display:none;">
+    <input type="email" id="email-input" placeholder="you@example.com" inputmode="email" required autocomplete="username webauthn">
+    <button type="submit" class="btn btn-primary">Continue</button>
+  </form>
+
+  <div id="auth-or" style="display:none;">or</div>
+
+  <div id="auth-primary" style="display:none;">
     <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
     <button class="btn" id="pk-signup-btn">Create account</button>
   </div>
+
+  <p id="email-plea" style="display:none;">
+    A <strong>passkey</strong> is faster and more private - Face ID, Touch ID,
+    Windows Hello, or a hardware key, synced across your devices. No email needed.
+  </p>
 
   <form id="signup-form" style="display:none;">
     <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
     <button type="submit" class="btn btn-primary">Create passkey</button>
   </form>
 
-  <form id="auth-form" style="display:none;">
-    <input type="email" id="email-input" placeholder="you@example.com" required autocomplete="email">
-    <button type="submit" class="btn btn-primary">Continue</button>
-  </form>
-  <p id="email-plea" style="display:none;">
-    Please use a passkey instead - I'd rather not have your email address.
-    Passkeys sign you in with Face ID, Touch ID, Windows Hello, or a hardware key
-    and sync across your devices automatically.
-  </p>
   <form id="code-form" style="display:none;">
     <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
     <button type="submit" class="btn btn-primary">Sign in</button>
@@ -801,11 +877,10 @@ export const HTML = `<!DOCTYPE html>
   </form>
 
   <div id="auth-status"></div>
+  <div id="resend-row" style="display:none;"></div>
   <div id="dev-link"></div>
   <div id="auth-alts">
     <a href="#" id="use-passkey" style="display:none;">Use passkey instead</a>
-    <a href="#" id="use-email">Use email instead</a>
-    <span id="alts-sep">·</span>
     <a href="#" id="use-recovery">Use recovery code</a>
     <span id="alts-sep2">·</span>
     <a href="#" id="auth-back" style="display:none;">Back</a>
@@ -957,12 +1032,12 @@ export const HTML = `<!DOCTYPE html>
   const signupName  = document.getElementById('signup-name');
   const pkSigninBtn = document.getElementById('pk-signin-btn');
   const pkSignupBtn = document.getElementById('pk-signup-btn');
-  const useEmail    = document.getElementById('use-email');
   const usePasskey  = document.getElementById('use-passkey');
   const useRecovery = document.getElementById('use-recovery');
-  const altsSep     = document.getElementById('alts-sep');
   const altsSep2    = document.getElementById('alts-sep2');
   const emailPlea   = document.getElementById('email-plea');
+  const authOr      = document.getElementById('auth-or');
+  const resendRow   = document.getElementById('resend-row');
   const recoveryForm = document.getElementById('recovery-form');
   const recoveryUser = document.getElementById('recovery-user');
   const recoveryCode = document.getElementById('recovery-code');
@@ -1235,12 +1310,22 @@ export const HTML = `<!DOCTYPE html>
     chatScreen.style.height = '';
     authScreen.style.display = 'flex';
     chatScreen.style.display = 'none';
+    // Prefill the email input from the last sign-in so returning users
+    // don't have to retype. Method preference would steer the layout, but
+    // the primary screen now exposes both options at once, so prefill is
+    // the only persistence that materially changes the UX.
+    try {
+      const last = getStored('auth.lastEmail');
+      if (last && !emailInput.value) emailInput.value = last;
+    } catch {}
     try { showAuthForm('primary'); } catch {}
   }
 
   function showChat() {
     isAuthed = true;
     resetConnectionState();
+    stopAuthPolling();
+    abortConditionalPasskey();
     authScreen.style.display = 'none';
     chatScreen.style.display = 'flex';
     connectWS();
@@ -1293,8 +1378,11 @@ export const HTML = `<!DOCTYPE html>
     };
   }
 
-  async function passkeyGet(opts) {
-    const cred = await navigator.credentials.get({ publicKey: prepGet(opts) });
+  async function passkeyGet(opts, extra) {
+    const args = { publicKey: prepGet(opts) };
+    if (extra && extra.mediation) args.mediation = extra.mediation;
+    if (extra && extra.signal) args.signal = extra.signal;
+    const cred = await navigator.credentials.get(args);
     return {
       id: cred.id,
       rawId: bufToB64url(cred.rawId),
@@ -1309,33 +1397,174 @@ export const HTML = `<!DOCTYPE html>
     };
   }
 
+  // --- Auth helpers -------------------------------------------------------
+  // Capability detection: gate every passkey UI affordance on a real
+  // PublicKeyCredential implementation. Without it we collapse to the
+  // email-only flow rather than letting users click buttons that error.
+  const pkSupported = !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.get);
+  let pkConditionalSupported = false;
+  if (pkSupported && typeof PublicKeyCredential.isConditionalMediationAvailable === 'function') {
+    PublicKeyCredential.isConditionalMediationAvailable()
+      .then((ok) => { pkConditionalSupported = !!ok; if (ok && authScreen.style.display !== 'none') startConditionalPasskey(); })
+      .catch(() => {});
+  }
+
+  // Persist the user's last-used email and method so returning visitors land
+  // on the right screen with their address prefilled. Wrapped in try/catch
+  // because Safari private mode throws on localStorage access.
+  function getStored(k) { try { return localStorage.getItem(k); } catch { return null; } }
+  function setStored(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+  function setStatus(msg, isError) {
+    authStatus.textContent = msg || '';
+    authStatus.classList.toggle('error', !!isError && !!msg);
+  }
+
+  // Loading helper: spinner on the primary submit button + disable inputs to
+  // block double-submit. Works for both forms (querySelectorAll inputs) and
+  // the bare passkey buttons (passed directly).
+  function setLoading(target, on) {
+    const isForm = target && target.tagName === 'FORM';
+    const btn = isForm ? target.querySelector('button[type=submit], button.btn-primary') : target;
+    if (btn) { btn.classList.toggle('loading', !!on); btn.disabled = !!on; }
+    if (isForm) target.querySelectorAll('input').forEach((i) => { i.disabled = !!on; });
+  }
+
+  // Conditional WebAuthn (autofill UI). Browsers surface saved passkeys in
+  // the autocomplete dropdown when an input with autocomplete="webauthn" is
+  // focused; selecting one resolves the pending get() and we sign in. The
+  // request is aborted whenever the user takes another auth path so the
+  // server-side challenge isn't left dangling.
+  let conditionalAbort = null;
+  async function startConditionalPasskey() {
+    if (!pkSupported || !pkConditionalSupported) return;
+    abortConditionalPasskey();
+    const ac = new AbortController();
+    conditionalAbort = ac;
+    try {
+      const startRes = await fetch('/auth/webauthn/auth/start', { method: 'POST' });
+      if (!startRes.ok || ac.signal.aborted) return;
+      const startData = await startRes.json();
+      const assertion = await passkeyGet(startData.options, { mediation: 'conditional', signal: ac.signal });
+      if (ac.signal.aborted) return;
+      const finRes = await fetch('/auth/webauthn/auth/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: assertion }),
+      });
+      if (!finRes.ok) return;
+      setStored('auth.lastMethod', 'passkey');
+      checkAuth();
+    } catch {
+      // Aborted, cancelled, or no credential picked - all silent.
+    } finally {
+      if (conditionalAbort === ac) conditionalAbort = null;
+    }
+  }
+  function abortConditionalPasskey() {
+    if (conditionalAbort) {
+      try { conditionalAbort.abort(); } catch {}
+      conditionalAbort = null;
+    }
+  }
+
+  // Magic-link mode polls /auth/me so when the user clicks the link in a
+  // sibling tab (Mail.app etc. opens in the default browser), this tab
+  // notices the new session cookie and switches to chat without a manual
+  // refresh.
+  let pollTimer = null;
+  function startAuthPolling() {
+    stopAuthPolling();
+    pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/auth/me');
+        if (res.ok) { stopAuthPolling(); checkAuth(); }
+      } catch {}
+    }, 2000);
+  }
+  function stopAuthPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // Resend cooldown shared by both the code and link flows. The server's
+  // per-email rate limit is 5/hr, so a 30s client-side guard mainly stops
+  // accidental double-clicks; the actual resend goes through submitSend()
+  // which performs the full /auth/send round-trip.
+  const RESEND_COOLDOWN = 30;
+  let resendTick = null;
+  let resendRemaining = 0;
+  let lastSentEmail = '';
+  let lastSentMode = '';
+  function showResend(mode, email) {
+    lastSentMode = mode; lastSentEmail = email;
+    resendRow.style.display = 'flex';
+    resendRemaining = RESEND_COOLDOWN;
+    renderResend();
+    if (resendTick) clearInterval(resendTick);
+    resendTick = setInterval(() => {
+      resendRemaining--;
+      if (resendRemaining <= 0) { clearInterval(resendTick); resendTick = null; }
+      renderResend();
+    }, 1000);
+  }
+  function hideResend() {
+    resendRow.style.display = 'none';
+    resendRow.textContent = '';
+    if (resendTick) { clearInterval(resendTick); resendTick = null; }
+  }
+  function renderResend() {
+    resendRow.textContent = '';
+    const label = document.createElement('span');
+    label.textContent = lastSentMode === 'code' ? "Didn't get the code?" : "Didn't get the link?";
+    resendRow.appendChild(label);
+    const a = document.createElement('a');
+    a.href = '#';
+    if (resendRemaining > 0) {
+      a.textContent = 'Resend in ' + resendRemaining + 's';
+      a.setAttribute('aria-disabled', 'true');
+    } else {
+      a.textContent = 'Resend';
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (a.getAttribute('aria-disabled') === 'true') return;
+        submitSend(lastSentEmail, /*isResend*/ true);
+      });
+    }
+    resendRow.appendChild(a);
+  }
+
   function showAuthForm(which) {
-    authPrimary.style.display = which === 'primary' ? 'flex' : 'none';
+    const onPrimary = which === 'primary';
+    // Email entry sits on the primary screen alongside the passkey buttons,
+    // so the user picks email-or-passkey from one view.
+    authForm.style.display = onPrimary ? 'flex' : 'none';
+    authPrimary.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
+    authOr.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
+    emailPlea.style.display = (onPrimary && pkSupported) ? 'block' : 'none';
     signupForm.style.display = which === 'signup' ? 'flex' : 'none';
-    authForm.style.display = which === 'email' ? 'flex' : 'none';
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
-    const onPrimary = which === 'primary';
     authBack.style.display = onPrimary ? 'none' : 'inline';
-    // Only show the email plea on the initial email-entry page.
-    emailPlea.style.display = which === 'email' ? 'block' : 'none';
-    // Don't offer "Use email instead" once we're already in the email/code flow;
-    // instead offer a one-click path back to the passkey menu.
-    const inEmailFlow = which === 'email' || which === 'code';
-    useEmail.style.display = inEmailFlow ? 'none' : 'inline';
-    usePasskey.style.display = inEmailFlow ? 'inline' : 'none';
-    altsSep.style.display = 'inline';
-    // Second separator sits between "Use recovery code" and "Back"; hide it
-    // on the primary screen so there's no dangling dot when Back is absent.
+    // "Use passkey instead" is the one-click escape hatch from the code
+    // flow back to the primary view; pointless on screens that already
+    // show the passkey buttons.
+    usePasskey.style.display = (which === 'code' && pkSupported) ? 'inline' : 'none';
     altsSep2.style.display = onPrimary ? 'none' : 'inline';
+    // Re-enable inputs that a previous setLoading() may have disabled.
+    [authForm, codeForm, signupForm, recoveryForm].forEach((f) => {
+      f.querySelectorAll('input,button').forEach((el) => { el.disabled = false; el.classList.remove('loading'); });
+    });
+    if (which !== 'code') hideResend();
+    stopAuthPolling();
+    if (onPrimary && pkSupported) startConditionalPasskey();
+    else abortConditionalPasskey();
   }
 
   async function doPasskeySignin() {
-    if (!window.PublicKeyCredential) {
-      authStatus.textContent = 'Passkeys not supported on this browser';
-      return;
-    }
-    authStatus.textContent = 'Waiting for passkey...';
+    if (!pkSupported) { setStatus('Passkeys not supported on this browser', true); return; }
+    abortConditionalPasskey();
+    setLoading(pkSigninBtn, true);
+    setStatus('Waiting for passkey...');
     try {
       const startRes = await fetch('/auth/webauthn/auth/start', { method: 'POST' });
       const startData = await startRes.json();
@@ -1348,19 +1577,24 @@ export const HTML = `<!DOCTYPE html>
       });
       const finData = await finRes.json();
       if (!finRes.ok) throw new Error(finData.error || 'Sign-in failed');
-      authStatus.textContent = '';
+      setStatus('');
+      setStored('auth.lastMethod', 'passkey');
       checkAuth();
     } catch (e) {
-      authStatus.textContent = (e && e.message) || 'Cancelled';
+      setStatus((e && e.message) || 'Cancelled', true);
+      // After an error, restart conditional UI so autofill still works.
+      if (authScreen.style.display !== 'none') startConditionalPasskey();
+    } finally {
+      setLoading(pkSigninBtn, false);
     }
   }
 
   async function doPasskeySignup(displayName) {
-    if (!window.PublicKeyCredential) {
-      authStatus.textContent = 'Passkeys not supported on this browser';
-      return;
-    }
-    authStatus.textContent = 'Creating passkey...';
+    if (!pkSupported) { setStatus('Passkeys not supported on this browser', true); return; }
+    abortConditionalPasskey();
+    const submitBtn = signupForm.querySelector('button[type=submit]');
+    setLoading(signupForm, true);
+    setStatus('Creating passkey...');
     try {
       const startRes = await fetch('/auth/webauthn/register/start', {
         method: 'POST',
@@ -1377,7 +1611,8 @@ export const HTML = `<!DOCTYPE html>
       });
       const finData = await finRes.json();
       if (!finRes.ok) throw new Error(finData.error || 'Registration failed');
-      authStatus.textContent = '';
+      setStatus('');
+      setStored('auth.lastMethod', 'passkey');
       if (finData.recoveryCodes && finData.recoveryCodes.length) {
         rcCodes.textContent = finData.recoveryCodes.join('\\n');
         rcModal.classList.add('open');
@@ -1385,43 +1620,94 @@ export const HTML = `<!DOCTYPE html>
         checkAuth();
       }
     } catch (e) {
-      authStatus.textContent = (e && e.message) || 'Cancelled';
+      setStatus((e && e.message) || 'Cancelled', true);
+    } finally {
+      setLoading(signupForm, false);
+      if (submitBtn) submitBtn.classList.remove('loading');
+    }
+  }
+
+  // Shared between the form submit and the resend link.
+  async function submitSend(email, isResend) {
+    if (!email) return;
+    if (!isResend) setLoading(authForm, true);
+    setStatus(isResend ? 'Resending...' : 'Sending...');
+    devLink.innerHTML = '';
+    try {
+      const res = await fetch('/auth/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus(data.error || 'Something went wrong', true);
+        return;
+      }
+      setStored('auth.lastEmail', email);
+      setStored('auth.lastMethod', 'email');
+      if (data.mode === 'code') {
+        pendingEmail = email;
+        if (!isResend) showAuthForm('code');
+        setStatus('Enter the 6-digit code we sent to ' + email);
+        if (!isResend) { codeInput.value = ''; codeInput.focus(); }
+        showResend('code', email);
+        if (data.dev_code) {
+          devLink.textContent = '';
+          const label = document.createElement('span');
+          label.textContent = 'Dev code: ';
+          const code = document.createElement('b');
+          code.textContent = data.dev_code;
+          label.appendChild(code);
+          devLink.appendChild(label);
+        }
+      } else {
+        setStatus('Sign-in link sent to ' + email + '. Check your inbox.');
+        showResend('link', email);
+        startAuthPolling();
+        if (data.dev_link) {
+          devLink.textContent = '';
+          const a = document.createElement('a');
+          a.href = data.dev_link;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = 'Dev: click here to sign in';
+          devLink.appendChild(a);
+        }
+      }
+    } catch {
+      setStatus('Network error', true);
+    } finally {
+      if (!isResend) setLoading(authForm, false);
     }
   }
 
   pkSigninBtn.addEventListener('click', doPasskeySignin);
   pkSignupBtn.addEventListener('click', () => {
     showAuthForm('signup');
-    authStatus.textContent = '';
+    setStatus('');
     signupName.focus();
   });
   signupForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const n = signupName.value.trim();
     if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(n)) {
-      authStatus.textContent = 'Username: 1-20 chars, letters/numbers/_/-';
+      setStatus('Username: 1-20 chars, letters/numbers/_/-', true);
       return;
     }
     doPasskeySignup(n);
-  });
-  useEmail.addEventListener('click', (e) => {
-    e.preventDefault();
-    showAuthForm('email');
-    authStatus.textContent = '';
-    devLink.innerHTML = '';
-    emailInput.focus();
   });
   usePasskey.addEventListener('click', (e) => {
     e.preventDefault();
     pendingEmail = '';
     showAuthForm('primary');
-    authStatus.textContent = '';
+    setStatus('');
     devLink.innerHTML = '';
   });
   useRecovery.addEventListener('click', (e) => {
     e.preventDefault();
     showAuthForm('recovery');
-    authStatus.textContent = '';
+    setStatus('');
     recoveryUser.focus();
   });
   recoveryForm.addEventListener('submit', async (e) => {
@@ -1429,10 +1715,11 @@ export const HTML = `<!DOCTYPE html>
     const uname = recoveryUser.value.trim();
     const code = recoveryCode.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(uname) || !/^[A-HJ-NP-Z2-9]{12}$/.test(code)) {
-      authStatus.textContent = 'Invalid username or code';
+      setStatus('Invalid username or code', true);
       return;
     }
-    authStatus.textContent = 'Verifying...';
+    setLoading(recoveryForm, true);
+    setStatus('Verifying...');
     try {
       const res = await fetch('/auth/recovery', {
         method: 'POST',
@@ -1441,10 +1728,12 @@ export const HTML = `<!DOCTYPE html>
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed');
-      authStatus.textContent = '';
+      setStatus('');
       checkAuth();
     } catch (err) {
-      authStatus.textContent = (err && err.message) || 'Failed';
+      setStatus((err && err.message) || 'Failed', true);
+    } finally {
+      setLoading(recoveryForm, false);
     }
   });
 
@@ -1458,53 +1747,20 @@ export const HTML = `<!DOCTYPE html>
     checkAuth();
   });
 
-  // --- Auth form ---
-  authForm.addEventListener('submit', async (e) => {
+  authForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const email = emailInput.value.trim();
-    if (!email) return;
-    authStatus.textContent = 'Sending...';
-    devLink.innerHTML = '';
-    try {
-      const res = await fetch('/auth/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        if (data.mode === 'code') {
-          pendingEmail = email;
-          showAuthForm('code');
-          authStatus.textContent = 'Enter the 6-digit code we sent to ' + email;
-          codeInput.value = '';
-          codeInput.focus();
-          if (data.dev_code) {
-            devLink.textContent = '';
-            const label = document.createElement('span');
-            label.textContent = 'Dev code: ';
-            const code = document.createElement('b');
-            code.textContent = data.dev_code;
-            label.appendChild(code);
-            devLink.appendChild(label);
-          }
-        } else {
-          authStatus.textContent = 'Check your email for the login link!';
-          if (data.dev_link) {
-            devLink.textContent = '';
-            const a = document.createElement('a');
-            a.href = data.dev_link;
-            a.target = '_blank';
-            a.rel = 'noopener';
-            a.textContent = 'Dev: click here to sign in';
-            devLink.appendChild(a);
-          }
-        }
-      } else {
-        authStatus.textContent = data.error || 'Something went wrong';
-      }
-    } catch {
-      authStatus.textContent = 'Network error';
+    submitSend(emailInput.value.trim(), /*isResend*/ false);
+  });
+
+  // Auto-submit the 6-digit code as soon as it's entered (typed or pasted).
+  // Stripping non-digits lets paste of "123-456" or "Your code: 123456" land
+  // cleanly. The submit handler still re-validates so a bad value is safe.
+  codeInput.addEventListener('input', () => {
+    const digits = codeInput.value.replace(/\\D/g, '').slice(0, 6);
+    if (digits !== codeInput.value) codeInput.value = digits;
+    if (digits.length === 6 && !codeInput.disabled) {
+      if (typeof codeForm.requestSubmit === 'function') codeForm.requestSubmit();
+      else codeForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     }
   });
 
@@ -1512,7 +1768,8 @@ export const HTML = `<!DOCTYPE html>
     e.preventDefault();
     const code = codeInput.value.trim();
     if (!/^\\d{6}$/.test(code) || !pendingEmail) return;
-    authStatus.textContent = 'Verifying...';
+    setLoading(codeForm, true);
+    setStatus('Verifying...');
     try {
       const res = await fetch('/auth/verify-code', {
         method: 'POST',
@@ -1521,16 +1778,19 @@ export const HTML = `<!DOCTYPE html>
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        authStatus.textContent = '';
+        setStatus('');
         devLink.innerHTML = '';
+        hideResend();
         showAuthForm('primary');
         pendingEmail = '';
         checkAuth();
       } else {
-        authStatus.textContent = data.error || 'Invalid code';
+        setStatus(data.error || 'Invalid code', true);
       }
     } catch {
-      authStatus.textContent = 'Network error';
+      setStatus('Network error', true);
+    } finally {
+      setLoading(codeForm, false);
     }
   });
 
@@ -1538,7 +1798,7 @@ export const HTML = `<!DOCTYPE html>
     e.preventDefault();
     pendingEmail = '';
     showAuthForm('primary');
-    authStatus.textContent = '';
+    setStatus('');
     devLink.innerHTML = '';
   });
 
@@ -1614,15 +1874,18 @@ export const HTML = `<!DOCTYPE html>
 
   // --- Messages ---
   // Render a relative timestamp: "<1m" for the first 2 minutes (a stable
-  // label, not a ticking seconds counter), "Nm" up to 2 hours, "Nh" up
-  // to 2 days, "Nd" after that. The numeric ms value is kept on the
-  // element so refreshTimestamps() can recompute the label as the
-  // message ages.
+  // label, not a ticking seconds counter), "Nm" up to 10 minutes,
+  // multiples of 5 minutes ("10m", "15m", "20m", ...) up to 2 hours,
+  // then "Nh" up to 2 days, "Nd" after that. The 5-minute rounding past
+  // 10m keeps the time column from re-ticking on every minute boundary
+  // for messages that are no longer "fresh" — labels in this band only
+  // change once every 5 minutes by construction.
   function formatRelativeTime(tsMs) {
     const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
     if (diffSec < 120) return '<1m';
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 120) return diffMin + 'm';
+    if (diffMin < 10) return diffMin + 'm';
+    if (diffMin < 120) return (Math.floor(diffMin / 5) * 5) + 'm';
     const diffHr = Math.floor(diffMin / 60);
     if (diffHr < 48) return diffHr + 'h';
     const diffDay = Math.floor(diffHr / 24);
@@ -1708,25 +1971,41 @@ export const HTML = `<!DOCTYPE html>
     }, 160);
   }
 
-  // Walk the messages newest-first and populate each .timeline cell
-  // only when its label differs from its next-newer neighbor's. That
-  // anchors the label on the most recent message of each bucket: a
-  // run of five messages at "15h" shows the label on the last (newest)
-  // of the run, with the four older cells left blank. Because the
-  // sub-2-minute bucket renders as a stable "<1m" (rather than a
-  // per-second counter), the same grouping rule naturally shows it on
-  // just the newest sub-2-minute message — no special case needed.
+  // Walk the messages newest-first and decide which .timeline cells
+  // surface their label vs. stay blank. Two grouping rules combine:
+  //   - Within the first 2 hours, any two messages whose timestamps
+  //     are 5 minutes or less apart collapse into one group, so a
+  //     conversation chain shows a single label on the newest of the
+  //     run (transitive: 4-minute hops chain through indefinitely).
+  //   - Past 2 hours we fall back to label-equality grouping ("15h"
+  //     repeats are blanked), since the bucket itself already widens
+  //     to an hour and timestamp-window grouping would be redundant.
+  // The rules also handle the stable "<1m" sub-2-minute bucket: same
+  // label on every entry, so it groups under the second rule.
   function refreshTimestamps() {
     if (messageCount === 0) return;
     const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
+    const now = Date.now();
+    const GROUP_WINDOW_MS = 5 * 60 * 1000;
+    const SUB_2H_MS = 120 * 60 * 1000;
     let nextLabel = null;
+    let nextTs = null;
     for (let i = msgs.length - 1; i >= 0; i--) {
       const msg = msgs[i];
-      const label = formatRelativeTime(Number(msg.dataset.ts));
+      const ts = Number(msg.dataset.ts);
+      const label = formatRelativeTime(ts);
       const timeline = msg.querySelector('.timeline');
-      const display = label !== nextLabel ? label : '';
-      if (timeline) setTimelineText(timeline, display);
+      let hide;
+      if (nextLabel === null) {
+        hide = false;
+      } else if ((now - ts) < SUB_2H_MS && (now - nextTs) < SUB_2H_MS && (nextTs - ts) <= GROUP_WINDOW_MS) {
+        hide = true;
+      } else {
+        hide = (label === nextLabel);
+      }
+      if (timeline) setTimelineText(timeline, hide ? '' : label);
       nextLabel = label;
+      nextTs = ts;
     }
   }
 
@@ -2383,16 +2662,15 @@ export const HTML = `<!DOCTYPE html>
     });
   });
 
-  // Rebuild the timeline dividers once a second so labels age in place
-  // and groups re-coalesce as adjacent messages fall into the same
-  // relative-time bucket (e.g. two messages previously at 119s and 118s
-  // merge into a single "2m ago" group after the next tick). Skip the
-  // work when the tab is hidden — the user isn't looking, and we'll
-  // catch up on the next tick once it's foregrounded.
+  // Rebuild the timeline dividers periodically so labels age in place
+  // and groups re-coalesce as messages slide across the 5-minute window
+  // boundary. Past 10m the labels themselves only flip on 5-minute
+  // marks, so a 10-second cadence is enough to catch every transition
+  // visibly; the tab-hidden bail keeps it from running off-screen.
   setInterval(() => {
     if (document.hidden) return;
     refreshTimestamps();
-  }, 1000);
+  }, 10000);
 
   // Pin the chat screen to the actual visual viewport height so iOS
   // Safari keeps the input bar flush with the top of the keyboard
