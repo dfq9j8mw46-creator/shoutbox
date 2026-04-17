@@ -178,7 +178,12 @@ export const HTML = `<!DOCTYPE html>
     background: rgba(255, 255, 255, 0.08);
   }
   /* Suppress the default clickable-name underline inside a pill —
-     the pill's hover highlight signals interactivity instead. */
+     the pill's hover highlight signals interactivity instead. The
+     li itself carries the clickable-name class now (so the whole pill
+     is the click target), so we have to cover both it and any nested
+     .clickable-name spans. */
+  #users-list li:hover,
+  #users-list li:hover .clickable-name,
   #users-list li .clickable-name:hover { text-decoration: none; }
   /* Joining: start above the bar (translateY up) with no opacity, then
      slide down into place. Leaving reverses that and collapses the
