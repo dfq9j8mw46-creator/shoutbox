@@ -702,9 +702,14 @@ export const HTML = `<!DOCTYPE html>
     outline: none;
   }
   #email-pill #email-input::placeholder { color: var(--text-muted); font-size: 13px; }
+  /* Button shrunk just enough that the pill's flex height matches the
+     standalone glass inputs in signup/code/recovery (~33px desktop /
+     ~46px mobile). Explicitly opts out of the mobile .btn min-height
+     since the surrounding pill already provides the 44px tap target. */
   #email-pill #email-submit-btn {
-    margin: 4px;
-    padding: 6px;
+    margin: 3px;
+    padding: 4px;
+    min-height: 0;
     border: none;
     border-radius: 999px;
     background: var(--accent);

@@ -1054,12 +1054,13 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname === '/auth/webauthn/auth/start' && request.method === 'POST') {
-      // 60 challenge creations per hour per client. Conditional WebAuthn
-      // (autofill) plus the explicit Continue button means a single page
-      // visit can burn 2-3 challenges; the limit is sized to absorb that
-      // for normal use while still bounding abuse.
+      // 120 challenge creations per hour per client. Active development
+      // and back-and-forth testing burn challenges quickly — conditional
+      // WebAuthn (one per page visit) plus every explicit Continue click
+      // (one per attempt). The limit is generous for humans but still
+      // bounds an attacker hammering the endpoint.
       const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
-      const rl = await rateLimit(env, `webauthn_rl:${ipHash}`, 60, 60 * 60);
+      const rl = await rateLimit(env, `webauthn_rl:${ipHash}`, 120, 60 * 60);
       if (!rl.ok) return json({ error: 'Too many requests' }, 429);
 
       const rpID = url.hostname;
