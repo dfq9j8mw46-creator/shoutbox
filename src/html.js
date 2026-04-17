@@ -28,24 +28,7 @@ export const HTML = `<!DOCTYPE html>
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
-  /* --- Sidebar title ----------------------------------------------------- */
-  /* On desktop the title sits at the *bottom* of the users panel (card uses
-     flex-direction: column-reverse) so the separator goes above it. On
-     mobile the panel uses normal column direction so the title sits at the
-     top and the separator flips back to border-bottom inside the media
-     query below. */
-  #sidebar-title {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px 14px 8px;
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  #sidebar-title h1 { font-size: 14px; font-weight: 600; letter-spacing: .5px; }
-
-  /* --- Chat body + users panel ------------------------------------------ */
+  /* --- Chat body layout ------------------------------------------------- */
   #chat-body {
     flex: 1;
     display: flex;
@@ -58,65 +41,45 @@ export const HTML = `<!DOCTYPE html>
     min-width: 0;
     min-height: 0;
   }
-  #users-panel {
-    /* Desktop: anchor the card to the bottom-right so the title row sits
-       level with the input bar. Users list lives above the title and grows
-       upward (flex-direction: column-reverse reverses the DOM order of
-       sidebar-title + users-list without needing to change the markup). */
-    margin: 0 12px 0 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    display: flex;
-    flex-direction: column-reverse;
+
+  /* Subtle "Shoutbox · build xxx" status line sitting on the chat
+     background just above the online-users strip. Clicking it opens the
+     build-provenance modal. */
+  #status-line {
+    text-align: center;
+    padding: 4px 12px 0;
+    font-size: 11px;
+    color: var(--text-muted);
     flex-shrink: 0;
-    overflow: hidden;
-    min-width: 140px;
-    max-width: 220px;
-    width: max-content;
-    align-self: flex-end;
-    max-height: 100%;
   }
+  #status-line a {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  #status-line a:hover { color: var(--text); }
+
+  /* Horizontal strip of online users. Scrolls if the list overflows. */
   #users-list {
     list-style: none;
-    overflow-y: auto;
-    padding: 8px 0;
     margin: 0;
-    flex: 1;
+    padding: 6px 12px;
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    overflow-x: auto;
+    flex-shrink: 0;
   }
+  #users-list:empty { display: none; }
   #users-list li {
-    padding: 4px 14px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-
-  @media (max-width: 640px) {
-    #chat-body { flex-direction: column; }
-    #users-panel {
-      order: -1;
-      margin: 0;
-      border: none;
-      border-bottom: 1px solid var(--border);
-      border-radius: 0;
-      width: auto;
-      max-width: none;
-      min-width: 0;
-      max-height: 33vh;
-      align-self: auto;
-      flex-direction: column;
-    }
-    /* Keep the title bar visible when collapsed so users have a tap target
-       to expand again; only the user list folds away. */
-    #users-panel.collapsed-mobile #users-list { display: none; }
-    #sidebar-title {
-      cursor: pointer;
-      border-top: none;
-      border-bottom: 1px solid var(--border);
-    }
-  }
+  /* Fingerprint sits next to the name in the dropdown/modal contexts; in
+     the compact horizontal strip it's noise — let the click-to-open user
+     modal surface it instead. */
+  #users-list .fp { display: none; }
 
   /* --- Icon buttons ------------------------------------------------------ */
   .icon-btn {
@@ -326,13 +289,14 @@ export const HTML = `<!DOCTYPE html>
   }
   #rc-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-  /* --- Passkey list in profile ------------------------------------------ */
-  #pk-section, #email-section {
+  /* --- Grouped sections in profile modal --------------------------------- */
+  #pk-section, #email-section, #account-section {
     border-top: 1px solid var(--border);
     padding-top: 10px;
     display: flex; flex-direction: column; gap: 6px;
   }
-  #pk-section h4, #email-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  #pk-section h4, #email-section h4, #account-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .account-actions { display: flex; gap: 8px; justify-content: space-between; }
   #email-current {
     display: flex; align-items: center; gap: 8px;
     font-size: 13px;
@@ -433,14 +397,21 @@ export const HTML = `<!DOCTYPE html>
     align-items: center;
     gap: 8px;
   }
+  /* The generic #profile-box input[type="text"] rule forces width: 100%,
+     which breaks the flex layout. Switch these to flex-basis inside
+     .color-row so username grows into the remaining space and the hex /
+     swatch stay their fixed sizes. */
+  .color-row input[type="text"] { width: auto; }
+  .color-row #username-input { flex: 1; min-width: 0; font-weight: 600; }
+  .color-row #color-hex { flex: 0 0 90px; }
+  .color-row #color-input { flex: 0 0 40px; }
   #color-input {
-    width: 40px;
     height: 32px;
-    border: none;
+    border: 1px solid var(--border);
     border-radius: 4px;
     cursor: pointer;
-    background: none;
-    padding: 0;
+    background: var(--bg);
+    padding: 2px;
   }
   #color-hex {
     background: var(--bg);
@@ -450,12 +421,7 @@ export const HTML = `<!DOCTYPE html>
     border-radius: 4px;
     font-size: 13px;
     font-family: monospace;
-    width: 90px;
     outline: none;
-  }
-  #color-preview {
-    font-weight: 600;
-    font-size: 14px;
   }
   #color-warn {
     margin-top: 4px;
@@ -465,22 +431,17 @@ export const HTML = `<!DOCTYPE html>
   }
   #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   #profile-box .actions .spacer { flex: 1; }
+  /* Save is the only footer button now — make it fill the row so it doesn't
+     look stranded on its own line. */
+  #profile-save { width: 100%; padding: 8px; font-size: 13px; }
   .btn-danger { background: #5a1f1f; color: #f5bebe; }
   .btn-danger:hover { background: #7a2a2a; }
 
   /* --- Build badge + verify modal --------------------------------------- */
-  #build-badge {
-    display: none;
-    font-size: 11px;
-    color: var(--text-muted);
-    text-decoration: none;
-    font-family: monospace;
-    padding: 2px 8px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-  }
-  #build-badge:hover { color: var(--text); border-color: var(--text-muted); }
+  /* #build-badge now lives inside the subtle #status-line; it picks up the
+     muted color, font-size, and hover styling from that parent. No more
+     pill border / padding. */
+  #build-badge { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   #verify-modal {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,.6);
@@ -650,6 +611,10 @@ export const HTML = `<!DOCTYPE html>
     <div id="main-col">
       <div id="conn-status">Reconnecting...</div>
       <div id="messages"></div>
+      <div id="status-line">
+        <a id="build-badge" href="#" title="Click to verify this build">Shoutbox</a>
+      </div>
+      <ul id="users-list"></ul>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
         <button class="btn icon-btn" id="profile-btn" title="Profile" aria-label="Profile">
@@ -661,13 +626,6 @@ export const HTML = `<!DOCTYPE html>
         </button>
       </div>
     </div>
-    <aside id="users-panel">
-      <div id="sidebar-title">
-        <h1>Shoutbox</h1>
-        <a id="build-badge" href="#" title="Click to verify this build"></a>
-      </div>
-      <ul id="users-list"></ul>
-    </aside>
   </div>
 </div>
 
@@ -712,15 +670,11 @@ export const HTML = `<!DOCTYPE html>
     <button type="button" id="profile-close" aria-label="Close">&times;</button>
     <h3>Edit Profile</h3>
     <div>
-      <label for="username-input">Username (1-20 chars)</label>
-      <input type="text" id="username-input" maxlength="20" pattern="[a-zA-Z0-9_\\-]+">
-    </div>
-    <div>
-      <label>Name color</label>
+      <label for="username-input">Username</label>
       <div class="color-row">
-        <input type="color" id="color-input">
+        <input type="text" id="username-input" maxlength="20" pattern="[a-zA-Z0-9_\\-]+">
         <input type="text" id="color-hex" maxlength="7" placeholder="#5b8def">
-        <span id="color-preview">Preview</span>
+        <input type="color" id="color-input">
       </div>
       <div id="color-warn"></div>
     </div>
@@ -750,14 +704,18 @@ export const HTML = `<!DOCTYPE html>
     <div id="pk-section">
       <h4>Passkeys</h4>
       <div id="pk-list"></div>
-      <button class="btn" id="pk-add-btn" type="button">Add a passkey to this device</button>
-      <button class="btn" id="rc-regen-btn" type="button">Regenerate recovery codes</button>
-      <button class="btn" id="revoke-others-btn" type="button">Sign out everywhere else</button>
+      <button class="btn" id="pk-add-btn" type="button">Add passkey</button>
+      <button class="btn" id="rc-regen-btn" type="button">New recovery codes</button>
+      <button class="btn" id="revoke-others-btn" type="button">Sign out other devices</button>
+    </div>
+    <div id="account-section">
+      <h4>Account</h4>
+      <div class="account-actions">
+        <button class="btn" id="profile-logout" type="button">Sign out</button>
+        <button class="btn btn-danger" id="profile-delete" type="button">Delete account</button>
+      </div>
     </div>
     <div class="actions">
-      <button class="btn btn-danger" id="profile-delete">Delete account</button>
-      <button class="btn" id="profile-logout">Log out</button>
-      <span class="spacer"></span>
       <button class="btn btn-primary" id="profile-save">Save</button>
     </div>
   </div>
@@ -803,15 +761,12 @@ export const HTML = `<!DOCTYPE html>
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
   const usersList   = document.getElementById('users-list');
-  const usersPanel  = document.getElementById('users-panel');
-  const sidebarTitle = document.getElementById('sidebar-title');
   const logoutBtn   = document.getElementById('profile-logout');
   const profileBtn  = document.getElementById('profile-btn');
   const profileModal = document.getElementById('profile-modal');
   const usernameInput = document.getElementById('username-input');
   const colorInput  = document.getElementById('color-input');
   const colorHex    = document.getElementById('color-hex');
-  const colorPreview = document.getElementById('color-preview');
   const colorWarn    = document.getElementById('color-warn');
   const profileSave = document.getElementById('profile-save');
   const profileClose = document.getElementById('profile-close');
@@ -1690,8 +1645,7 @@ export const HTML = `<!DOCTYPE html>
     usernameInput.value = myUsername;
     colorInput.value = myColor.startsWith('#') ? myColor : '#5b8def';
     colorHex.value = colorInput.value;
-    colorPreview.style.color = colorInput.value;
-    colorPreview.textContent = myUsername || 'Preview';
+    usernameInput.style.color = colorInput.value;
     notifyToggle.checked = notifyOn;
     updateColorWarn();
     renderEmail();
@@ -1756,7 +1710,7 @@ export const HTML = `<!DOCTYPE html>
 
   colorInput.addEventListener('input', () => {
     colorHex.value = colorInput.value;
-    colorPreview.style.color = colorInput.value;
+    usernameInput.style.color = colorInput.value;
     updateColorWarn();
   });
 
@@ -1764,13 +1718,18 @@ export const HTML = `<!DOCTYPE html>
     const v = colorHex.value;
     if (/^#[0-9a-fA-F]{6}$/.test(v)) {
       colorInput.value = v;
-      colorPreview.style.color = v;
+      usernameInput.style.color = v;
     }
     updateColorWarn();
   });
 
-  usernameInput.addEventListener('input', () => {
-    colorPreview.textContent = usernameInput.value || 'Preview';
+  // Toggling the notify preference is client-only (localStorage), so apply
+  // it immediately instead of waiting for Save. Playing a short tone on
+  // enable doubles as a preview so the user knows what they opted into.
+  notifyToggle.addEventListener('change', () => {
+    notifyOn = notifyToggle.checked;
+    localStorage.setItem('notify', notifyOn ? 'on' : 'off');
+    if (notifyOn) playNotification();
   });
 
   profileSave.addEventListener('click', async () => {
@@ -1802,8 +1761,8 @@ export const HTML = `<!DOCTYPE html>
         const data = await res.json();
         myUsername = data.username;
         myColor = data.color;
-        notifyOn = notifyToggle.checked;
-        localStorage.setItem('notify', notifyOn ? 'on' : 'off');
+        // Notify preference is persisted live via the toggle's change
+        // handler; no need to touch it here.
         // The Worker already pushed the new profile to the Durable Object via
         // its /admin/update-user admin route before responding, so there's
         // nothing to announce from here.
@@ -1842,8 +1801,7 @@ export const HTML = `<!DOCTYPE html>
       versionInfo = await res.json();
       const sha = versionInfo.commit || 'unknown';
       const short = sha === 'dev' ? 'dev' : sha.slice(0, 7);
-      buildBadge.textContent = 'build ' + short;
-      buildBadge.style.display = 'inline-block';
+      buildBadge.textContent = 'Shoutbox \u00B7 build ' + short;
     } catch {}
   }
 
@@ -1931,15 +1889,6 @@ export const HTML = `<!DOCTYPE html>
       usersList.appendChild(li);
     }
   }
-  // Mobile: tap the sidebar title to collapse/expand the user list.
-  // The build badge lives inside the title — let its own click handler
-  // (verify modal) run instead of toggling the panel.
-  sidebarTitle.addEventListener('click', (e) => {
-    if (e.target.closest('#build-badge')) return;
-    if (window.matchMedia('(max-width: 640px)').matches) {
-      usersPanel.classList.toggle('collapsed-mobile');
-    }
-  });
 
   // --- Boot ---
   loadVersion();
