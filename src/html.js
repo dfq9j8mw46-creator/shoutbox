@@ -382,9 +382,19 @@ export const HTML = `<!DOCTYPE html>
     outline: none;
   }
   /* Placeholder inherits the input's font size so it matches both the
-     typed value and the surrounding messages on every viewport
-     (13px desktop, 16px mobile after the iOS-zoom guard above). */
+     typed value and the surrounding messages on every viewport. */
   #input-wrap #msg-input::placeholder { color: var(--text-muted); }
+  /* Neutralise Chrome/Edge's :-webkit-autofill yellow wash on the
+     chat input so a browser that tries to autofill it anyway (despite
+     autocomplete="off") doesn't repaint the pill. */
+  #msg-input:-webkit-autofill,
+  #msg-input:-webkit-autofill:hover,
+  #msg-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--text);
+    -webkit-box-shadow: 0 0 0 1000px transparent inset;
+    transition: background-color 9999s ease-in-out 0s;
+    caret-color: var(--text);
+  }
   /* Send button sits inside the pill on the right and only shows once
      the user has typed something. Toggled via [data-empty] on #input-wrap. */
   #input-wrap #send-btn {
@@ -1149,7 +1159,7 @@ export const HTML = `<!DOCTYPE html>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
         <div id="input-wrap">
-          <input type="text" id="msg-input" placeholder="Message Shoutbox" maxlength="500" autocomplete="off">
+          <input type="text" id="msg-input" placeholder="Message Shoutbox" maxlength="500" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" data-1p-ignore data-lpignore="true" data-form-type="other">
           <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send" style="visibility:hidden;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
           </button>
