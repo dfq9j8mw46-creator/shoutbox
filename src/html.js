@@ -1613,13 +1613,14 @@ export const HTML = `<!DOCTYPE html>
   }
 
   // --- Messages ---
-  // Render a relative timestamp: "Ns ago" for the first 2 minutes,
-  // "Nm ago" up to 2 hours, "Nh ago" up to 2 days, "Nd ago" after that.
-  // The numeric ms value is kept on the element so refreshTimestamps()
-  // can recompute the label as the message ages.
+  // Render a relative timestamp: "<1m" for the first 2 minutes (a stable
+  // label, not a ticking seconds counter), "Nm" up to 2 hours, "Nh" up
+  // to 2 days, "Nd" after that. The numeric ms value is kept on the
+  // element so refreshTimestamps() can recompute the label as the
+  // message ages.
   function formatRelativeTime(tsMs) {
     const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
-    if (diffSec < 120) return diffSec + 's';
+    if (diffSec < 120) return '<1m';
     const diffMin = Math.floor(diffSec / 60);
     if (diffMin < 120) return diffMin + 'm';
     const diffHr = Math.floor(diffMin / 60);
@@ -1710,28 +1711,41 @@ export const HTML = `<!DOCTYPE html>
   // Walk the messages newest-first and populate each .timeline cell
   // only when its label differs from its next-newer neighbor's. That
   // anchors the label on the most recent message of each bucket: a
-  // run of five messages at "15h ago" shows the label on the last
-  // (newest) of the run, with the four older cells left blank.
-  // Seconds-precision labels ("Ns") tick every second on every visible
-  // sub-2-minute message, which is too noisy — show the seconds counter
-  // only on the very latest message and leave older sub-2-minute cells
-  // blank until they roll over into the minute bucket.
+  // run of five messages at "15h" shows the label on the last (newest)
+  // of the run, with the four older cells left blank. Because the
+  // sub-2-minute bucket renders as a stable "<1m" (rather than a
+  // per-second counter), the same grouping rule naturally shows it on
+  // just the newest sub-2-minute message — no special case needed.
   function refreshTimestamps() {
     if (messageCount === 0) return;
     const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
-    const latestIdx = msgs.length - 1;
     let nextLabel = null;
-    for (let i = latestIdx; i >= 0; i--) {
+    for (let i = msgs.length - 1; i >= 0; i--) {
       const msg = msgs[i];
       const label = formatRelativeTime(Number(msg.dataset.ts));
       const timeline = msg.querySelector('.timeline');
-      const isSeconds = label.endsWith('s');
-      let display;
-      if (isSeconds && i !== latestIdx) display = '';
-      else display = label !== nextLabel ? label : '';
-      if (timeline) timeline.textContent = display;
+      const display = label !== nextLabel ? label : '';
+      if (timeline) setTimelineText(timeline, display);
       nextLabel = label;
     }
+  }
+
+  // Cross-fade a timeline cell when its text changes so labels drifting
+  // from "2m" → "3m" as messages age feel like ambient updates instead
+  // of jump cuts. First-time population (empty → label) sets the text
+  // instantly — only subsequent changes fade.
+  function setTimelineText(timeline, display) {
+    const prev = timeline.textContent;
+    if (prev === display) return;
+    if (!prev) { timeline.textContent = display; return; }
+    if (timeline._fadeTimer) clearTimeout(timeline._fadeTimer);
+    timeline.style.transition = 'opacity 180ms ease-out';
+    timeline.style.opacity = '0';
+    timeline._fadeTimer = setTimeout(() => {
+      timeline.textContent = display;
+      timeline.style.opacity = '1';
+      timeline._fadeTimer = 0;
+    }, 180);
   }
 
   function scrollBottom() {
@@ -2385,30 +2399,47 @@ export const HTML = `<!DOCTYPE html>
   // instead of letting the page scroll below it. dvh handles most
   // browsers, but visualViewport is more reliable when the keyboard
   // toggles.
+  //
+  // iOS fires a burst of resize + scroll events on visualViewport as
+  // the keyboard slides up or down — dozens per second. rAF-coalesce
+  // them so we do at most one layout-and-rescroll pass per frame, and
+  // skip writes that would be no-ops. This is the single biggest lever
+  // for making the keyboard open/close feel snappy.
   if (window.visualViewport) {
+    const vv = window.visualViewport;
+    let pinRaf = 0;
     const pin = () => {
-      // If the user was reading "now" before the viewport resized (e.g.
-      // the mobile keyboard just opened), keep them pinned to the
-      // bottom afterwards. Otherwise shrinking #messages leaves their
-      // scrollTop unchanged, which pushes the newest messages behind
-      // the input pill.
-      const wasNearBottom = messagesDiv.scrollHeight -
-        messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
-      chatScreen.style.height = window.visualViewport.height + 'px';
-      // Counter iOS's auto-scroll when the keyboard opens on input focus:
-      // the window can still scroll despite overflow:hidden on html/body
-      // during the focus transition, so force it back to the top.
-      window.scrollTo(0, 0);
-      if (wasNearBottom) {
-        // Wait one frame for the height change to settle so scrollHeight
-        // reflects the new layout before we re-anchor to the bottom.
-        requestAnimationFrame(() => {
-          messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        });
-      }
+      if (pinRaf) return;
+      pinRaf = requestAnimationFrame(() => {
+        pinRaf = 0;
+        // If the user was reading "now" before the viewport resized
+        // (e.g. the mobile keyboard just opened), keep them pinned to
+        // the bottom afterwards. Otherwise shrinking #messages leaves
+        // their scrollTop unchanged, which pushes the newest messages
+        // behind the input pill.
+        const wasNearBottom = messagesDiv.scrollHeight -
+          messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
+        const targetH = vv.height + 'px';
+        if (chatScreen.style.height !== targetH) {
+          chatScreen.style.height = targetH;
+        }
+        // Counter iOS's auto-scroll when the keyboard opens on input
+        // focus: the window can still scroll despite overflow:hidden on
+        // html/body during the focus transition, so force it back to
+        // the top. Guard on scrollY so we don't hit the scrollTo path
+        // every frame once we're already at 0.
+        if (window.scrollY !== 0) window.scrollTo(0, 0);
+        if (wasNearBottom) {
+          // behavior: 'auto' bypasses the CSS scroll-behavior: smooth
+          // on #messages. A smooth scroll here would chase the bottom
+          // every frame of the keyboard animation and always trail it,
+          // which is exactly what the stutter looked like.
+          messagesDiv.scrollTo({ top: messagesDiv.scrollHeight, behavior: 'auto' });
+        }
+      });
     };
-    window.visualViewport.addEventListener('resize', pin);
-    window.visualViewport.addEventListener('scroll', pin);
+    vv.addEventListener('resize', pin);
+    vv.addEventListener('scroll', pin);
     pin();
   }
   // Belt-and-suspenders for iOS: when the message input gains focus,
