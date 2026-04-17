@@ -7,6 +7,16 @@ export const HTML = `<!DOCTYPE html>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  /* Lock the root element to the viewport so iOS Safari can't scroll
+     the window when the on-screen keyboard opens. Without this, tapping
+     the chat input pushes the whole page up and the input ends up
+     floating near the top with a blank area below it. */
+  html {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   :root {
     --bg: #0f0f0f;
     --surface: #1a1a1a;
@@ -2070,11 +2080,20 @@ export const HTML = `<!DOCTYPE html>
   if (window.visualViewport) {
     const pin = () => {
       chatScreen.style.height = window.visualViewport.height + 'px';
+      // Counter iOS's auto-scroll when the keyboard opens on input focus:
+      // the window can still scroll despite overflow:hidden on html/body
+      // during the focus transition, so force it back to the top.
+      window.scrollTo(0, 0);
     };
     window.visualViewport.addEventListener('resize', pin);
     window.visualViewport.addEventListener('scroll', pin);
     pin();
   }
+  // Belt-and-suspenders for iOS: when the message input gains focus,
+  // snap the window back to the top after the browser's auto-scroll.
+  msgInput.addEventListener('focus', () => {
+    setTimeout(() => window.scrollTo(0, 0), 0);
+  });
 
   // --- Boot ---
   loadVersion();
