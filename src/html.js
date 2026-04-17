@@ -449,7 +449,37 @@ export const HTML = `<!DOCTYPE html>
   #auth-screen h2 { font-size: 13px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
   #auth-primary { display: flex; gap: 8px; }
-  #auth-primary .btn { padding: 8px 14px; font-size: 13px; }
+  /* Glass button treatment matches the chat-input pill (#input-wrap):
+     translucent surface, soft border, fully rounded, with backdrop blur.
+     Scoped to #auth-screen so the chat profile modal's solid-pill
+     buttons are unaffected. */
+  #auth-screen .btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    color: var(--text);
+    padding: 8px 18px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  #auth-screen .btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  /* Primary lifts the wash with an accent tint so it still reads as
+     the recommended action without breaking the glass aesthetic. */
+  #auth-screen .btn-primary {
+    background: rgba(91, 141, 239, 0.20);
+    border-color: rgba(91, 141, 239, 0.45);
+    color: #fff;
+  }
+  #auth-screen .btn-primary:hover {
+    background: rgba(91, 141, 239, 0.30);
+    border-color: rgba(91, 141, 239, 0.65);
+  }
   #auth-or {
     display: flex;
     align-items: center;
@@ -612,7 +642,7 @@ export const HTML = `<!DOCTYPE html>
   .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   #auth-form, #code-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  #auth-form input, #code-form input {
+  #code-form input {
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
@@ -622,8 +652,56 @@ export const HTML = `<!DOCTYPE html>
     width: 240px;
     outline: none;
   }
-  #auth-form input:focus, #code-form input:focus { border-color: var(--accent); }
+  #code-form input:focus { border-color: var(--accent); }
   #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  /* Email entry as a glass pill with the submit arrow tucked inside,
+     mirroring the chat #input-wrap + #send-btn pattern. The arrow only
+     appears once the user has typed something (visibility toggled in
+     JS) so the empty state stays clean. */
+  #email-pill {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 320px;
+    max-width: 100%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  #email-pill:focus-within {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  #email-pill #email-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 8px 16px;
+    font-size: 13px;
+    outline: none;
+  }
+  #email-pill #email-input::placeholder { color: var(--text-muted); font-size: 13px; }
+  #email-pill #email-submit-btn {
+    margin: 4px;
+    padding: 6px;
+    border: none;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    transition: background-color 120ms ease;
+  }
+  #email-pill #email-submit-btn:hover { background: #4a7de0; }
+  #email-pill #email-submit-btn svg { display: block; }
   /* Wrapper reserves enough vertical space for the worst-case status
      (a 2-3 line success/error message) plus the resend row, so the
      centered auth-screen above doesn't reflow when a message lands. */
@@ -855,8 +933,12 @@ export const HTML = `<!DOCTYPE html>
   <p id="auth-intro">Sign in with a passkey - or with a one-time code by email.</p>
 
   <form id="auth-form" style="display:none;">
-    <input type="email" id="email-input" placeholder="you@example.com" inputmode="email" required autocomplete="username webauthn">
-    <button type="submit" class="btn btn-primary">Continue</button>
+    <div id="email-pill">
+      <input type="email" id="email-input" placeholder="you@example.com" inputmode="email" required autocomplete="username webauthn">
+      <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+      </button>
+    </div>
   </form>
 
   <div id="auth-or" style="display:none;">or</div>
@@ -1060,6 +1142,7 @@ export const HTML = `<!DOCTYPE html>
   const rcContinue  = document.getElementById('rc-continue');
   const authForm    = document.getElementById('auth-form');
   const emailInput  = document.getElementById('email-input');
+  const emailSubmitBtn = document.getElementById('email-submit-btn');
   const codeForm    = document.getElementById('code-form');
   const codeInput   = document.getElementById('code-input');
   const authBack    = document.getElementById('auth-back');
@@ -1331,8 +1414,16 @@ export const HTML = `<!DOCTYPE html>
       const last = getStored('auth.lastEmail');
       if (last && !emailInput.value) emailInput.value = last;
     } catch {}
+    updateEmailSubmitVisibility();
     try { showAuthForm('primary'); } catch {}
   }
+
+  // Mirror the chat input pattern: only surface the submit arrow once
+  // the user has typed something, so the empty pill stays uncluttered.
+  function updateEmailSubmitVisibility() {
+    emailSubmitBtn.style.visibility = emailInput.value.trim() ? 'visible' : 'hidden';
+  }
+  emailInput.addEventListener('input', updateEmailSubmitVisibility);
 
   function showChat() {
     isAuthed = true;
