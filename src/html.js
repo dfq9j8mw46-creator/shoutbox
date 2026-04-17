@@ -1123,10 +1123,17 @@ export const HTML = `<!DOCTYPE html>
     } catch {}
   }
 
+  // Defense-in-depth against @mention notification floods. The server
+  // already strips the @ prefix on mentions past its cap before
+  // broadcasting, but if that ever regresses the client still refuses
+  // to render — or ping on — more than MAX_MENTIONS distinct recipients
+  // in one message.
+  const MAX_MENTIONS = 5;
   function renderMessageText(parent, text) {
     const re = /(https?:\\/\\/[^\\s<>"'()]+[^\\s<>"'().,!?;:])|@([a-zA-Z0-9_\\-]{1,20})/g;
     let last = 0;
     let mentionedMe = false;
+    const seenMentions = new Set();
     let m;
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) {
@@ -1141,12 +1148,19 @@ export const HTML = `<!DOCTYPE html>
         a.className = 'link';
         parent.appendChild(a);
       } else {
-        const span = document.createElement('span');
-        span.className = 'mention';
-        span.textContent = m[0];
-        parent.appendChild(span);
-        if (myUsername && m[2].toLowerCase() === myUsername.toLowerCase()) {
-          mentionedMe = true;
+        const lower = m[2].toLowerCase();
+        if (!seenMentions.has(lower) && seenMentions.size >= MAX_MENTIONS) {
+          // Excess mention: render as plain text so no ping, no highlight.
+          parent.appendChild(document.createTextNode(m[0]));
+        } else {
+          seenMentions.add(lower);
+          const span = document.createElement('span');
+          span.className = 'mention';
+          span.textContent = m[0];
+          parent.appendChild(span);
+          if (myUsername && lower === myUsername.toLowerCase()) {
+            mentionedMe = true;
+          }
         }
       }
       last = m.index + m[0].length;

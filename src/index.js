@@ -1134,6 +1134,14 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname === '/auth/verify' && request.method === 'GET') {
+      // Per-IP limiter. The token is 32 random bytes so brute forcing
+      // it is infeasible on its own, but a loose GET endpoint is still
+      // a cheap way to churn KV lookups; bounding it keeps a malicious
+      // crawler from burning read capacity.
+      const verifyIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const verifyIpRl = await rateLimit(env, `verify_link_ip_rl:${verifyIpHash}`, 30, 60 * 60);
+      if (!verifyIpRl.ok) return json({ error: 'Too many attempts from this IP - try later' }, 429);
+
       const token = url.searchParams.get('token');
       if (!token) return json({ error: 'Missing token' }, 400);
 
