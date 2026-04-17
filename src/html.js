@@ -624,9 +624,20 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-form input:focus, #code-form input:focus { border-color: var(--accent); }
   #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  /* Wrapper reserves enough vertical space for the worst-case status
+     (a 2-3 line success/error message) plus the resend row, so the
+     centered auth-screen above doesn't reflow when a message lands. */
+  #auth-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-height: 84px;
+    width: 100%;
+    max-width: 320px;
+  }
   #auth-status { color: var(--text-muted); font-size: 13px; min-height: 18px; text-align: center; max-width: 320px; }
   #auth-status.error { color: #ff6b6b; }
-  #dev-link { margin-top: 8px; }
   #dev-link a { color: var(--accent); font-size: 13px; }
   @media (max-width: 640px) {
     #auth-screen #auth-form input,
@@ -876,9 +887,11 @@ export const HTML = `<!DOCTYPE html>
     <button type="submit" class="btn btn-primary">Sign in</button>
   </form>
 
-  <div id="auth-status"></div>
-  <div id="resend-row" style="display:none;"></div>
-  <div id="dev-link"></div>
+  <div id="auth-meta">
+    <div id="auth-status"></div>
+    <div id="resend-row" style="display:none;"></div>
+    <div id="dev-link"></div>
+  </div>
   <div id="auth-alts">
     <a href="#" id="use-passkey" style="display:none;">Use passkey instead</a>
     <a href="#" id="use-recovery">Use recovery code</a>
