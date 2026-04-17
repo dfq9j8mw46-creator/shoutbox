@@ -497,15 +497,7 @@ export const HTML = `<!DOCTYPE html>
     height: 1px;
     background: var(--border);
   }
-  #email-plea {
-    max-width: 320px;
-    color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.5;
-    text-align: center;
-  }
-  #email-plea strong { color: var(--text); font-weight: 600; }
-  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+#auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
   #signup-form, #recovery-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -930,11 +922,10 @@ export const HTML = `<!DOCTYPE html>
      login page on refresh when the user is already signed in) -->
 <div id="auth-screen" style="display:none;">
   <h1>Shoutbox</h1>
-  <p id="auth-intro">Sign in with a passkey - or with a one-time code by email.</p>
 
   <form id="auth-form" style="display:none;">
     <div id="email-pill">
-      <input type="email" id="email-input" placeholder="you@example.com" inputmode="email" required autocomplete="username webauthn">
+      <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
       <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
       </button>
@@ -947,11 +938,6 @@ export const HTML = `<!DOCTYPE html>
     <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
     <button class="btn" id="pk-signup-btn">Create account</button>
   </div>
-
-  <p id="email-plea" style="display:none;">
-    A <strong>passkey</strong> is faster and more private - Face ID, Touch ID,
-    Windows Hello, or a hardware key, synced across your devices. No email needed.
-  </p>
 
   <form id="signup-form" style="display:none;">
     <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
@@ -1130,7 +1116,6 @@ export const HTML = `<!DOCTYPE html>
   const usePasskey  = document.getElementById('use-passkey');
   const useRecovery = document.getElementById('use-recovery');
   const altsSep2    = document.getElementById('alts-sep2');
-  const emailPlea   = document.getElementById('email-plea');
   const authOr      = document.getElementById('auth-or');
   const resendRow   = document.getElementById('resend-row');
   const recoveryForm = document.getElementById('recovery-form');
@@ -1644,7 +1629,6 @@ export const HTML = `<!DOCTYPE html>
     authForm.style.display = onPrimary ? 'flex' : 'none';
     authPrimary.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
     authOr.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
-    emailPlea.style.display = (onPrimary && pkSupported) ? 'block' : 'none';
     signupForm.style.display = which === 'signup' ? 'flex' : 'none';
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
