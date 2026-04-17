@@ -55,77 +55,113 @@ export const HTML = `<!DOCTYPE html>
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    /* position:relative anchors the absolutely-floated #input-bar so it
+       can sit above the messages area without consuming its own row. */
+    position: relative;
   }
 
-  /* Row that sits just above the chat bar: own name pinned first, then
-     the rest of the online users, an optional "+N more" chip, and the
-     SB build badge on the right. */
-  #chat-status {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 6px 12px;
-    font-size: 12px;
-    color: var(--text-muted);
+  /* Top bar of online users: a centered row of pills. When the row
+     overflows the page width the "+N more" pill opens a shade below
+     that wraps every user into view. */
+  #users-bar {
     flex-shrink: 0;
+    position: relative;
+    z-index: 10;
   }
-  /* Horizontal strip of online users. Collapsed state clips overflow and
-     the JS counts the hidden rows into the "+N more" button. Expanded
-     state lets the list wrap to multiple lines. */
+  #users-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    max-width: 100%;
+  }
+  /* Centered list of user pills. Flex centering means arrivals shift
+     existing names outward to "make room in the center". Overflow is
+     clipped equally on both sides and counted into the +N more pill. */
   #users-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: row;
-    flex: 1;
+    gap: 6px;
     min-width: 0;
+    justify-content: center;
     overflow: hidden;
   }
+  /* Expanded "shade": the list pops out of the flex row and anchors to
+     the top of #users-bar, covering the top of the messages area with a
+     blurred, translucent backdrop. Items wrap onto multiple rows so
+     every online user is visible. */
   #users-list.expanded {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 12px;
     flex-wrap: wrap;
-    row-gap: 4px;
-    overflow: visible;
+    row-gap: 6px;
+    overflow-y: auto;
+    max-height: 60vh;
+    background: rgba(15, 15, 15, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    z-index: 20;
   }
+  /* Each user name is rendered as a pill. */
   #users-list li {
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
-    max-width: 200px;
-    margin-right: 12px;
-    /* Keep natural width so #users-list's overflow:hidden actually has
-       something to clip; without this the items would just shrink into
-       the container and the "+N more" count would always be 0. */
+    text-overflow: ellipsis;
+    max-width: 160px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     flex-shrink: 0;
     transition: transform 260ms ease, opacity 220ms ease,
-                max-width 260ms ease, margin-right 260ms ease;
+                max-width 260ms ease, padding 260ms ease;
   }
-  /* Joining: start below the bar (translateY down) with no opacity, then
-     slide up into place. Leaving reverses that and also collapses the
-     item's width + margin so neighbors close the gap smoothly. */
-  #users-list li.entering { transform: translateY(120%); opacity: 0; }
+  /* Joining: start above the bar (translateY up) with no opacity, then
+     slide down into place. Leaving reverses that and collapses the
+     pill's width + padding so neighbors close the gap smoothly. */
+  #users-list li.entering { transform: translateY(-120%); opacity: 0; }
   #users-list li.leaving {
-    transform: translateY(120%);
+    transform: translateY(-120%);
     opacity: 0;
     max-width: 0;
-    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-width: 0;
   }
   /* Fingerprint sits next to the name in the dropdown/modal contexts; in
      the compact horizontal strip it's noise — let the click-to-open user
      modal surface it instead. */
   #users-list .fp { display: none; }
 
+  /* "+N more" pill. Absolutely pinned to the right edge so the users
+     row stays visually centered — otherwise its width would shift the
+     list off-center. */
   #users-more {
-    background: none;
-    border: none;
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    padding: 0;
+    padding: 4px 10px;
+    border-radius: 999px;
     cursor: pointer;
     white-space: nowrap;
-    flex-shrink: 0;
+    z-index: 11;
   }
   #users-more:hover { color: var(--text); }
 
@@ -166,7 +202,10 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    padding: 8px 12px 8px 4px;
+    /* Extra bottom padding so the final messages aren't hidden behind
+       the floating input pill. Matches the input-bar height (pill +
+       surrounding padding) with a small visual gap above it. */
+    padding: 8px 12px 64px 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -209,29 +248,36 @@ export const HTML = `<!DOCTYPE html>
   .msg .text { color: var(--text); }
 
   /* --- Floating input bar ----------------------------------------------- */
-  /* The input-bar no longer has its own surface; it's just a spacer that
-     centers the floating #input-wrap above the chat background. */
+  /* The input-bar floats over the bottom of the messages area so that
+     chat scrolls up behind it. pointer-events: none on the container
+     lets messages receive clicks everywhere except through the pill
+     itself (which re-enables them). */
   #input-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
     padding: 8px 12px;
-    flex-shrink: 0;
-    position: relative;
+    pointer-events: none;
+    z-index: 5;
   }
   #input-wrap {
+    pointer-events: auto;
     position: relative;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    /* Subtle glass: translucent surface plus a backdrop blur so chat
+       messages scrolling behind the pill stay readable but softened. */
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 999px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     display: flex;
     align-items: center;
   }
-  /* Subtle white glassmorph highlight when the input is focused: a
-     translucent white wash with a soft white border and a light
-     backdrop blur, instead of the prior blue accent outline. */
+  /* When focused the wash and border brighten slightly to signal focus. */
   #input-wrap:focus-within {
     border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.08);
   }
   #input-wrap #msg-input {
     flex: 1;
@@ -273,6 +319,9 @@ export const HTML = `<!DOCTYPE html>
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 16px rgba(0,0,0,.45);
+    /* Re-enable pointer events; #input-bar uses pointer-events:none so
+       that chat scrolls through to the messages behind it. */
+    pointer-events: auto;
     display: none;
     z-index: 20;
   }
@@ -688,11 +737,13 @@ export const HTML = `<!DOCTYPE html>
   <div id="chat-body">
     <div id="main-col">
       <div id="conn-status">Reconnecting...</div>
-      <div id="messages"></div>
-      <div id="chat-status">
-        <ul id="users-list"></ul>
+      <div id="users-bar">
+        <div id="users-row">
+          <ul id="users-list"></ul>
+        </div>
         <button id="users-more" type="button" style="display:none;"></button>
       </div>
+      <div id="messages"></div>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
         <div id="input-wrap">
@@ -2038,9 +2089,11 @@ export const HTML = `<!DOCTYPE html>
     updateUserOverflow();
   }
 
-  // Count how many user chips overflow the collapsed row's visible width
-  // and surface them as "+N more". Clicking the chip expands the row so
-  // it wraps and shows everyone.
+  // Count how many user pills overflow the collapsed row's visible
+  // width and surface them as "+N more". Because the list is centered,
+  // pills that can't fit spill off both the left and right edges, so we
+  // check against both bounds. Clicking the pill expands the row into a
+  // shade that wraps and shows everyone.
   function updateUserOverflow() {
     if (usersList.classList.contains('expanded')) {
       usersMore.style.display = 'none';
@@ -2055,7 +2108,7 @@ export const HTML = `<!DOCTYPE html>
     let hidden = 0;
     for (const li of lis) {
       const r = li.getBoundingClientRect();
-      if (r.right > listRect.right + 0.5) hidden++;
+      if (r.right > listRect.right + 0.5 || r.left < listRect.left - 0.5) hidden++;
     }
     if (hidden > 0) {
       usersMore.textContent = '+' + hidden + ' more';
@@ -2070,10 +2123,10 @@ export const HTML = `<!DOCTYPE html>
     updateUserOverflow();
   });
 
-  // Tap/click outside the row collapses the expanded list.
+  // Tap/click outside the bar collapses the expanded shade.
   document.addEventListener('click', (e) => {
     if (!usersList.classList.contains('expanded')) return;
-    if (e.target.closest('#chat-status')) return;
+    if (e.target.closest('#users-bar')) return;
     usersList.classList.remove('expanded');
     updateUserOverflow();
   });
