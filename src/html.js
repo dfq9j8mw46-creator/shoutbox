@@ -102,39 +102,36 @@ export const HTML = `<!DOCTYPE html>
     padding: 8px 12px;
     max-width: 100%;
   }
-  /* Centered list of user pills. Flex centering means arrivals shift
-     existing names outward to "make room in the center". Overflow is
-     clipped equally on both sides and counted into the +N more pill. */
+  /* Centered list of user pills. The row wraps up to 3 lines naturally,
+     then overflow:hidden clips any further rows and the JS counts them
+     into the "+N more" pill. Flex centering means arrivals shift
+     existing names outward to "make room in the center". */
   #users-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
     justify-content: center;
+    /* ~3 rows of 26px pills with two 6px row-gaps; overflow-hidden clips
+       any fourth row into the +N more pill. */
+    max-height: 90px;
     overflow: hidden;
   }
   /* Expanded "shade": the list pops out of the flex row and anchors to
-     the top of #users-bar, covering the top of the messages area with a
-     blurred, translucent backdrop. Items wrap onto multiple rows so
-     every online user is visible. */
+     the top of #users-bar, overlaying the messages area so every user
+     is visible. No backdrop — the pills float directly over the chat. */
   #users-list.expanded {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     padding: 8px 12px;
-    flex-wrap: wrap;
-    row-gap: 6px;
-    overflow-y: auto;
     max-height: 60vh;
-    background: rgba(15, 15, 15, 0.85);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    overflow-y: auto;
     z-index: 20;
   }
   /* Each user name is rendered as a pill. */
@@ -228,10 +225,10 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    /* Extra bottom padding so the final messages aren't hidden behind
-       the floating input pill. Matches the input-bar height (pill +
-       surrounding padding) with a small visual gap above it. */
-    padding: 8px 12px 64px 4px;
+    /* Bottom padding clears the floating input pill. Sized just a hair
+       above the input-bar height so the newest message sits snug
+       against the top edge of the pill with only a small breathing gap. */
+    padding: 8px 12px 52px 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -249,6 +246,9 @@ export const HTML = `<!DOCTYPE html>
     flex: 1 1 0;
     min-height: 0;
   }
+  /* Each message is a 3-column grid so the relative time sits in its
+     own right-aligned column (fixed width) and every username starts at
+     the exact same x-offset regardless of how wide the timestamp is. */
   .msg {
     font-size: 13px;
     line-height: 1.45;
@@ -256,22 +256,29 @@ export const HTML = `<!DOCTYPE html>
     border-left: 2px solid transparent;
     max-width: 100%;
     min-width: 0;
-    overflow-wrap: anywhere;
-    word-break: break-all;
+    display: grid;
+    grid-template-columns: 4.5em auto 1fr;
+    column-gap: 6px;
+    align-items: baseline;
   }
-  .msg .text { overflow-wrap: anywhere; word-break: break-all; }
   .msg .ts {
     color: var(--text-muted);
     font-size: 11px;
-    margin-right: 4px;
+    text-align: right;
+    white-space: nowrap;
     user-select: none;
   }
   .msg .name {
     font-weight: 600;
-    margin-right: 4px;
+    white-space: nowrap;
     cursor: default;
   }
-  .msg .text { color: var(--text); }
+  .msg .text {
+    color: var(--text);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
 
   /* --- Floating input bar ----------------------------------------------- */
   /* The input-bar floats over the bottom of the messages area so that
@@ -2132,18 +2139,15 @@ export const HTML = `<!DOCTYPE html>
     updateUserOverflow();
   }
 
-  // Count how many user pills overflow the collapsed row's visible
-  // width and surface them as "+N more". Because the list is centered,
-  // pills that can't fit spill off both the left and right edges, so we
-  // check against both bounds. Clicking the pill expands the row into a
-  // shade that wraps and shows everyone.
+  // Count how many user pills overflow the 3-row limit and surface them
+  // as "+N more". Since the bar wraps onto multiple lines, any pill
+  // whose bottom edge falls below the visible list bottom is one of the
+  // clipped rows. Clicking the pill expands the list to show everyone.
   function updateUserOverflow() {
     if (usersList.classList.contains('expanded')) {
       usersMore.style.display = 'none';
       return;
     }
-    // Show the button with a placeholder so its width is included while
-    // we measure which rows overflow.
     usersMore.style.display = '';
     usersMore.textContent = '+0 more';
     const listRect = usersList.getBoundingClientRect();
@@ -2151,7 +2155,7 @@ export const HTML = `<!DOCTYPE html>
     let hidden = 0;
     for (const li of lis) {
       const r = li.getBoundingClientRect();
-      if (r.right > listRect.right + 0.5 || r.left < listRect.left - 0.5) hidden++;
+      if (r.bottom > listRect.bottom + 0.5) hidden++;
     }
     if (hidden > 0) {
       usersMore.textContent = '+' + hidden + ' more';
