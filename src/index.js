@@ -139,13 +139,22 @@ async function defaultColor(seed, secret) {
   return '#dddddd';
 }
 
+// Cap per-user session fan-out so `usessions:${email}` stays small and
+// profile updates don't devolve into an unbounded read/write loop.
+const MAX_SESSIONS_PER_USER = 20;
+
 async function addSessionIndex(env, email, sid) {
   const key = `usessions:${email}`;
   const cur = await env.KV.get(key);
   const list = cur ? JSON.parse(cur) : [];
-  if (!list.includes(sid)) {
-    list.push(sid);
-    await env.KV.put(key, JSON.stringify(list));
+  if (list.includes(sid)) return;
+  list.push(sid);
+  const evicted = list.length > MAX_SESSIONS_PER_USER
+    ? list.splice(0, list.length - MAX_SESSIONS_PER_USER)
+    : [];
+  await env.KV.put(key, JSON.stringify(list));
+  if (evicted.length) {
+    await Promise.all(evicted.map((s) => env.KV.delete(`session:${s}`)));
   }
 }
 
@@ -279,29 +288,14 @@ async function saveSession(env, sid, session) {
   await env.KV.put(`session:${sid}`, JSON.stringify(session), { expirationTtl: SESSION_TTL });
 }
 
-async function syncSessionWithProfile(env, sid, secret) {
+// Session is authoritative for username/color/fingerprint because profile
+// writes fan out via updateAllSessions. Auth hot paths (every /auth/me, /ws,
+// etc.) read only the session record here; the profile record is loaded
+// explicitly at the one write endpoint that needs it.
+async function loadSession(env, sid) {
   const raw = await env.KV.get(`session:${sid}`);
   if (!raw) return null;
-
-  const session = JSON.parse(raw);
-  const profile = await loadOrCreateProfile(env, session.email, secret);
-  let dirty = false;
-
-  if (profile.username && session.username !== profile.username) {
-    session.username = profile.username;
-    dirty = true;
-  }
-  if (profile.color && session.color !== profile.color) {
-    session.color = profile.color;
-    dirty = true;
-  }
-  if (profile.fingerprint && session.fingerprint !== profile.fingerprint) {
-    session.fingerprint = profile.fingerprint;
-    dirty = true;
-  }
-
-  if (dirty) await saveSession(env, sid, session);
-  return { session, profile };
+  return JSON.parse(raw);
 }
 
 async function updateAllSessions(env, email, patch) {
@@ -310,19 +304,17 @@ async function updateAllSessions(env, email, patch) {
   if (!cur) return;
 
   const list = JSON.parse(cur);
-  const alive = [];
-  for (const sid of list) {
+  const aliveSids = (await Promise.all(list.map(async (sid) => {
     const raw = await env.KV.get(`session:${sid}`);
-    if (!raw) continue;
-
+    if (!raw) return null;
     const session = JSON.parse(raw);
     Object.assign(session, patch);
     await saveSession(env, sid, session);
-    alive.push(sid);
-  }
+    return sid;
+  }))).filter((s) => s !== null);
 
-  if (alive.length === 0) await env.KV.delete(key);
-  else if (alive.length !== list.length) await env.KV.put(key, JSON.stringify(alive));
+  if (aliveSids.length === 0) await env.KV.delete(key);
+  else if (aliveSids.length !== list.length) await env.KV.put(key, JSON.stringify(aliveSids));
 }
 
 async function deleteUsernameIfOwned(env, username, email) {
@@ -438,23 +430,37 @@ async function createRecoveryCodes(env, ownerId) {
   return plain;
 }
 
-async function listCredentialIds(env, ownerId) {
+// userCreds index stores {id, createdAt} per passkey so the /auth/passkeys
+// endpoint can answer without fanning out to a KV read per credential.
+// Legacy records (array of id strings) are migrated lazily on first read.
+async function listCredentialEntries(env, ownerId) {
   const raw = await env.KV.get(`userCreds:${ownerId}`);
-  return raw ? JSON.parse(raw) : [];
+  if (!raw) return [];
+  const arr = JSON.parse(raw);
+  if (arr.length === 0 || typeof arr[0] !== 'string') return arr;
+  const entries = await Promise.all(arr.map(async (id) => {
+    const credRaw = await env.KV.get(`credential:${id}`);
+    return { id, createdAt: credRaw ? (JSON.parse(credRaw).createdAt || null) : null };
+  }));
+  await env.KV.put(`userCreds:${ownerId}`, JSON.stringify(entries));
+  return entries;
 }
 
-async function addCredentialId(env, ownerId, credId) {
-  const ids = await listCredentialIds(env, ownerId);
-  if (!ids.includes(credId)) {
-    ids.push(credId);
-    await env.KV.put(`userCreds:${ownerId}`, JSON.stringify(ids));
-  }
+async function listCredentialIds(env, ownerId) {
+  return (await listCredentialEntries(env, ownerId)).map((e) => e.id);
+}
+
+async function addCredentialId(env, ownerId, credId, createdAt) {
+  const entries = await listCredentialEntries(env, ownerId);
+  if (entries.some((e) => e.id === credId)) return;
+  entries.push({ id: credId, createdAt: createdAt || null });
+  await env.KV.put(`userCreds:${ownerId}`, JSON.stringify(entries));
 }
 
 async function removeCredentialId(env, ownerId, credId) {
-  const ids = (await listCredentialIds(env, ownerId)).filter((x) => x !== credId);
-  if (ids.length === 0) await env.KV.delete(`userCreds:${ownerId}`);
-  else await env.KV.put(`userCreds:${ownerId}`, JSON.stringify(ids));
+  const entries = (await listCredentialEntries(env, ownerId)).filter((e) => e.id !== credId);
+  if (entries.length === 0) await env.KV.delete(`userCreds:${ownerId}`);
+  else await env.KV.put(`userCreds:${ownerId}`, JSON.stringify(entries));
 }
 
 async function deleteAllCredentials(env, ownerId) {
@@ -616,14 +622,14 @@ async function handleRequest(request, env) {
       const body = await request.json().catch(() => ({}));
       const rpID = url.hostname;
       const sid = getCookie(request, 'sid');
-      const synced = sid ? await syncSessionWithProfile(env, sid, secret) : null;
+      const session = sid ? await loadSession(env, sid) : null;
 
       let ownerId, userName, isNew = false;
       let excludeIds = [];
 
-      if (synced) {
-        ownerId = synced.session.email;
-        userName = synced.session.username;
+      if (session) {
+        ownerId = session.email;
+        userName = session.username;
         excludeIds = await listCredentialIds(env, ownerId);
       } else {
         const dn = (body.displayName || '').trim().slice(0, 20);
@@ -710,6 +716,7 @@ async function handleRequest(request, env) {
       }
 
       let recoveryCodes = null;
+      const credCreatedAt = new Date().toISOString();
       try {
         await env.KV.put(
           `credential:${credId}`,
@@ -718,10 +725,10 @@ async function handleRequest(request, env) {
             publicKey,
             counter: credential.counter || 0,
             transports: (body.response && body.response.response && body.response.response.transports) || [],
-            createdAt: new Date().toISOString(),
+            createdAt: credCreatedAt,
           }),
         );
-        await addCredentialId(env, ch.ownerId, credId);
+        await addCredentialId(env, ch.ownerId, credId, credCreatedAt);
         if (ch.isNew) {
           recoveryCodes = await createRecoveryCodes(env, ch.ownerId);
         }
@@ -824,30 +831,23 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/passkeys' && request.method === 'GET') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
-      const ids = await listCredentialIds(env, synced.session.email);
-      const items = [];
-      for (const id of ids) {
-        const raw = await env.KV.get(`credential:${id}`);
-        if (!raw) continue;
-        const c = JSON.parse(raw);
-        items.push({ id, createdAt: c.createdAt });
-      }
-      return json({ passkeys: items });
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
+      const entries = await listCredentialEntries(env, session.email);
+      return json({ passkeys: entries.map(({ id, createdAt }) => ({ id, createdAt })) });
     }
 
     if (url.pathname === '/auth/passkeys/delete' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
       const body = await request.json().catch(() => ({}));
       const credId = (body.id || '').trim();
       const raw = await env.KV.get(`credential:${credId}`);
       if (!raw) return json({ error: 'Not found' }, 404);
       const cred = JSON.parse(raw);
-      if (cred.ownerId !== synced.session.email) return json({ error: 'Not yours' }, 403);
+      if (cred.ownerId !== session.email) return json({ error: 'Not yours' }, 403);
       await env.KV.delete(`credential:${credId}`);
       await removeCredentialId(env, cred.ownerId, credId);
       return json({ ok: true });
@@ -856,9 +856,9 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/sessions/revoke-others' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
-      const revoked = await deleteOtherSessions(env, synced.session.email, sid);
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
+      const revoked = await deleteOtherSessions(env, session.email, sid);
       return json({ ok: true, revoked });
     }
 
@@ -941,14 +941,14 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/recovery/regenerate' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
       // Each call runs 10 PBKDF2 rounds near the Worker CPU cap. Cap to 3/hour.
-      const rl = await rateLimit(env, `regen_rl:${synced.session.email}`, 3, 60 * 60);
+      const rl = await rateLimit(env, `regen_rl:${session.email}`, 3, 60 * 60);
       if (!rl.ok) {
         return json({ error: `Try again in ${Math.ceil(rl.retryAfterSec / 60)} min` }, 429);
       }
-      const codes = await createRecoveryCodes(env, synced.session.email);
+      const codes = await createRecoveryCodes(env, session.email);
       return json({ ok: true, recoveryCodes: codes });
     }
 
@@ -1004,9 +1004,8 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/me' && request.method === 'GET') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
-      const { session } = synced;
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
       const passkeyCount = (await listCredentialIds(env, session.email)).length;
       const hasEmail = !String(session.email).startsWith('pk:');
       return json({
@@ -1042,9 +1041,11 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/profile' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
-      const { session, profile: currentProfile } = synced;
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
+      // Profile read is needed here to preserve created_at on write; other
+      // auth endpoints skip it to keep the hot path at one KV read.
+      const currentProfile = await loadOrCreateProfile(env, session.email, secret);
       const body = await request.json().catch(() => ({}));
 
       if (body.username !== undefined) {
@@ -1118,9 +1119,8 @@ async function handleRequest(request, env) {
     if (url.pathname === '/auth/delete' && request.method === 'POST') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
-      const { session } = synced;
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
 
       // Ask the chat room to wipe this user's messages and close sockets
       try {
@@ -1144,9 +1144,8 @@ async function handleRequest(request, env) {
     if (url.pathname === '/ws') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
-      const synced = await syncSessionWithProfile(env, sid, secret);
-      if (!synced) return json({ error: 'Not signed in' }, 401);
-      const { session } = synced;
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
       const roomId = env.CHAT_ROOM.idFromName('main');
       const room = env.CHAT_ROOM.get(roomId);
 
