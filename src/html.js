@@ -140,8 +140,9 @@ export const HTML = `<!DOCTYPE html>
     overflow-y: auto;
     z-index: 20;
   }
-  /* Each user name floats as colored text on the chat background, with
-     no surface of its own. The gap on the parent provides spacing. */
+  /* Each user name is rendered as a pill with a subtle translucent
+     surface. No container behind the bar — pills float directly over
+     the chat background. */
   #users-list li {
     font-size: 12px;
     font-weight: 600;
@@ -149,37 +150,45 @@ export const HTML = `<!DOCTYPE html>
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 160px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     flex-shrink: 0;
     transition: transform 260ms ease, opacity 220ms ease,
-                max-width 260ms ease;
+                max-width 260ms ease, padding 260ms ease;
   }
   /* Joining: start above the bar (translateY up) with no opacity, then
      slide down into place. Leaving reverses that and collapses the
-     item's width so neighbors close the gap smoothly. */
+     pill's width + padding so neighbors close the gap smoothly. */
   #users-list li.entering { transform: translateY(-120%); opacity: 0; }
   #users-list li.leaving {
     transform: translateY(-120%);
     opacity: 0;
     max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
   }
   /* Fingerprint sits next to the name in the dropdown/modal contexts; in
      the compact horizontal strip it's noise — let the click-to-open user
      modal surface it instead. */
   #users-list .fp { display: none; }
 
-  /* "+N more" control. Absolutely pinned to the right edge so the users
+  /* "+N more" pill. Absolutely pinned to the right edge so the users
      row stays visually centered — otherwise its width would shift the
-     list off-center. Plain muted text to match the no-surface pills. */
+     list off-center. Matches the user pill surface so the overflow
+     control reads as part of the same strip. */
   #users-more {
     position: absolute;
     right: 12px;
     top: 14px;
-    background: none;
-    border: none;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    padding: 4px 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
     cursor: pointer;
     white-space: nowrap;
     pointer-events: auto;
