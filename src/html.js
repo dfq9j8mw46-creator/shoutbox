@@ -480,24 +480,24 @@ export const HTML = `<!DOCTYPE html>
     background: rgba(91, 141, 239, 0.30);
     border-color: rgba(91, 141, 239, 0.65);
   }
-  #auth-or {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 12px;
+  /* Smaller, ghost-style toggle to opt into the email flow when passkeys
+     are the primary path. Less visual weight than the main auth buttons
+     so it reads as a fallback, not a parallel choice. */
+  #use-email-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: .5px;
-    width: 280px;
-    max-width: 100%;
+    padding: 4px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease;
   }
-  #auth-or::before, #auth-or::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
+  #use-email-btn:hover {
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.18);
   }
-#auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
   #signup-form, #recovery-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -923,6 +923,13 @@ export const HTML = `<!DOCTYPE html>
 <div id="auth-screen" style="display:none;">
   <h1>Shoutbox</h1>
 
+  <div id="auth-primary" style="display:none;">
+    <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
+    <button class="btn" id="pk-signup-btn">Create account</button>
+  </div>
+
+  <button type="button" id="use-email-btn" style="display:none;">Sign in with email</button>
+
   <form id="auth-form" style="display:none;">
     <div id="email-pill">
       <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
@@ -931,13 +938,6 @@ export const HTML = `<!DOCTYPE html>
       </button>
     </div>
   </form>
-
-  <div id="auth-or" style="display:none;">or</div>
-
-  <div id="auth-primary" style="display:none;">
-    <button class="btn btn-primary" id="pk-signin-btn">Sign in with passkey</button>
-    <button class="btn" id="pk-signup-btn">Create account</button>
-  </div>
 
   <form id="signup-form" style="display:none;">
     <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
@@ -1116,7 +1116,7 @@ export const HTML = `<!DOCTYPE html>
   const usePasskey  = document.getElementById('use-passkey');
   const useRecovery = document.getElementById('use-recovery');
   const altsSep2    = document.getElementById('alts-sep2');
-  const authOr      = document.getElementById('auth-or');
+  const useEmailBtn = document.getElementById('use-email-btn');
   const resendRow   = document.getElementById('resend-row');
   const recoveryForm = document.getElementById('recovery-form');
   const recoveryUser = document.getElementById('recovery-user');
@@ -1624,19 +1624,21 @@ export const HTML = `<!DOCTYPE html>
 
   function showAuthForm(which) {
     const onPrimary = which === 'primary';
-    // Email entry sits on the primary screen alongside the passkey buttons,
-    // so the user picks email-or-passkey from one view.
-    authForm.style.display = onPrimary ? 'flex' : 'none';
+    const onEmail = which === 'email';
+    // Passkey-first: primary view shows the passkey buttons + a small
+    // "Sign in with email" toggle; the email pill lives in its own
+    // 'email' state. When passkeys aren't supported we collapse to the
+    // email pill on the primary view (since there's nothing to gate).
     authPrimary.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
-    authOr.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
+    useEmailBtn.style.display = (onPrimary && pkSupported) ? 'inline-block' : 'none';
+    authForm.style.display = (onEmail || (onPrimary && !pkSupported)) ? 'flex' : 'none';
     signupForm.style.display = which === 'signup' ? 'flex' : 'none';
     codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
     authBack.style.display = onPrimary ? 'none' : 'inline';
-    // "Use passkey instead" is the one-click escape hatch from the code
-    // flow back to the primary view; pointless on screens that already
-    // show the passkey buttons.
-    usePasskey.style.display = (which === 'code' && pkSupported) ? 'inline' : 'none';
+    // "Use passkey instead" escapes back to the primary view from the
+    // email or code flows; pointless when we're already on primary.
+    usePasskey.style.display = ((onEmail || which === 'code') && pkSupported) ? 'inline' : 'none';
     altsSep2.style.display = onPrimary ? 'none' : 'inline';
     // Re-enable inputs that a previous setLoading() may have disabled.
     [authForm, codeForm, signupForm, recoveryForm].forEach((f) => {
@@ -1644,7 +1646,10 @@ export const HTML = `<!DOCTYPE html>
     });
     if (which !== 'code') hideResend();
     stopAuthPolling();
-    if (onPrimary && pkSupported) startConditionalPasskey();
+    // Conditional WebAuthn fires on any screen with a webauthn-tagged
+    // input visible — both 'primary' (where the passkey buttons live)
+    // and 'email' (the email pill is the autofill anchor).
+    if ((onPrimary || onEmail) && pkSupported) startConditionalPasskey();
     else abortConditionalPasskey();
   }
 
@@ -1791,6 +1796,12 @@ export const HTML = `<!DOCTYPE html>
     showAuthForm('primary');
     setStatus('');
     devLink.innerHTML = '';
+  });
+  useEmailBtn.addEventListener('click', () => {
+    showAuthForm('email');
+    setStatus('');
+    devLink.innerHTML = '';
+    emailInput.focus();
   });
   useRecovery.addEventListener('click', (e) => {
     e.preventDefault();
