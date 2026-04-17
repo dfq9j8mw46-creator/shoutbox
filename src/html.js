@@ -86,13 +86,18 @@ export const HTML = `<!DOCTYPE html>
     position: relative;
   }
 
-  /* Top bar of online users: a centered row of pills. When the row
-     overflows the page width the "+N more" pill opens a shade below
-     that wraps every user into view. */
+  /* Top bar of online users. Floats over the messages area (so the
+     scrollbar on #messages can extend all the way to the top of the
+     page) with pointer-events:none on the frame; interactive children
+     re-enable them. When the row overflows the page width the "+N more"
+     control opens a shade below that wraps every user into view. */
   #users-bar {
-    flex-shrink: 0;
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     z-index: 10;
+    pointer-events: none;
   }
   #users-row {
     display: flex;
@@ -101,6 +106,7 @@ export const HTML = `<!DOCTYPE html>
     gap: 6px;
     padding: 8px 12px;
     max-width: 100%;
+    pointer-events: auto;
   }
   /* Centered list of user pills. The row wraps up to 3 lines naturally,
      then overflow:hidden clips any further rows and the JS counts them
@@ -134,7 +140,8 @@ export const HTML = `<!DOCTYPE html>
     overflow-y: auto;
     z-index: 20;
   }
-  /* Each user name is rendered as a pill. */
+  /* Each user name floats as colored text on the chat background, with
+     no surface of its own. The gap on the parent provides spacing. */
   #users-list li {
     font-size: 12px;
     font-weight: 600;
@@ -142,48 +149,40 @@ export const HTML = `<!DOCTYPE html>
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 160px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.06);
     flex-shrink: 0;
     transition: transform 260ms ease, opacity 220ms ease,
-                max-width 260ms ease, padding 260ms ease;
+                max-width 260ms ease;
   }
   /* Joining: start above the bar (translateY up) with no opacity, then
      slide down into place. Leaving reverses that and collapses the
-     pill's width + padding so neighbors close the gap smoothly. */
+     item's width so neighbors close the gap smoothly. */
   #users-list li.entering { transform: translateY(-120%); opacity: 0; }
   #users-list li.leaving {
     transform: translateY(-120%);
     opacity: 0;
     max-width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    border-width: 0;
   }
   /* Fingerprint sits next to the name in the dropdown/modal contexts; in
      the compact horizontal strip it's noise — let the click-to-open user
      modal surface it instead. */
   #users-list .fp { display: none; }
 
-  /* "+N more" pill. Absolutely pinned to the right edge so the users
+  /* "+N more" control. Absolutely pinned to the right edge so the users
      row stays visually centered — otherwise its width would shift the
-     list off-center. */
+     list off-center. Plain muted text to match the no-surface pills. */
   #users-more {
     position: absolute;
     right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    top: 14px;
+    background: none;
+    border: none;
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 999px;
+    padding: 4px 6px;
     cursor: pointer;
     white-space: nowrap;
+    pointer-events: auto;
     z-index: 11;
   }
   #users-more:hover { color: var(--text); }
@@ -225,10 +224,12 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    /* Bottom padding clears the floating input pill. Sized just a hair
-       above the input-bar height so the newest message sits snug
-       against the top edge of the pill with only a small breathing gap. */
-    padding: 8px 12px 52px 4px;
+    /* Bottom padding clears the floating input pill; top padding clears
+       the floating users bar (updated dynamically by a ResizeObserver so
+       it tracks 1, 2, or 3 rows of pills). Both bars float above so the
+       scrollbar on #messages extends from the top of the page all the
+       way down to the input pill. */
+    padding: 44px 12px 52px 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -926,6 +927,7 @@ export const HTML = `<!DOCTYPE html>
   const messagesDiv = document.getElementById('messages');
   const msgInput    = document.getElementById('msg-input');
   const sendBtn     = document.getElementById('send-btn');
+  const usersBar    = document.getElementById('users-bar');
   const usersList   = document.getElementById('users-list');
   const usersMore   = document.getElementById('users-more');
   const logoutBtn   = document.getElementById('profile-logout');
@@ -2179,6 +2181,19 @@ export const HTML = `<!DOCTYPE html>
   });
 
   window.addEventListener('resize', updateUserOverflow);
+
+  // The floating users bar overlays the top of #messages, so #messages
+  // needs a matching top padding to keep the oldest messages out from
+  // behind it. The bar grows taller when pills wrap onto extra rows, so
+  // track its actual rendered height with a ResizeObserver rather than
+  // hard-coding a number.
+  if (typeof ResizeObserver !== 'undefined') {
+    const syncPad = () => {
+      messagesDiv.style.paddingTop = usersBar.offsetHeight + 'px';
+    };
+    new ResizeObserver(syncPad).observe(usersBar);
+    syncPad();
+  }
 
   // Refresh relative timestamps once a second. Cheap for the 100-message
   // cap the DOM holds, and matches the seconds-precision labels used in
