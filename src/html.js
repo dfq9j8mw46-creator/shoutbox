@@ -23,6 +23,11 @@ export const HTML = `<!DOCTYPE html>
     height: 100dvh;
     display: flex;
     flex-direction: column;
+    /* Keep the body itself unscrollable so the mobile keyboard can't
+       reveal empty space below the floating input bar. Inner scrolling
+       (messages list) stays intact. */
+    overflow: hidden;
+    overscroll-behavior: none;
   }
   pre, code, kbd, samp, #vm-recipe, #verify-box dd {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -201,7 +206,15 @@ export const HTML = `<!DOCTYPE html>
     display: flex;
     align-items: center;
   }
-  #input-wrap:focus-within { border-color: var(--accent); }
+  /* Subtle white glassmorph highlight when the input is focused: a
+     translucent white wash with a soft white border and a light
+     backdrop blur, instead of the prior blue accent outline. */
+  #input-wrap:focus-within {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
   #input-wrap #msg-input {
     flex: 1;
     min-width: 0;
@@ -338,7 +351,7 @@ export const HTML = `<!DOCTYPE html>
   /* --- Grouped sections in profile modal --------------------------------- */
   #pk-section, #email-section, #account-section {
     border-top: 1px solid var(--border);
-    padding-top: 10px;
+    padding-top: 6px;
     display: flex; flex-direction: column; gap: 6px;
   }
   #pk-section h4, #email-section h4, #account-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
@@ -362,7 +375,10 @@ export const HTML = `<!DOCTYPE html>
   }
   #email-new-input:focus { border-color: var(--accent); }
   .email-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
-  #email-msg { font-size: 11px; min-height: 14px; color: var(--text-muted); }
+  /* Let the message collapse to 0 height when empty so it doesn't pad
+     out the bottom of the Email section. */
+  #email-msg { font-size: 11px; color: var(--text-muted); }
+  #email-msg:empty { display: none; }
   #email-msg.error { color: #ff6b6b; }
   #email-msg.ok { color: #8fd18f; }
   .pk-row {
@@ -407,7 +423,7 @@ export const HTML = `<!DOCTYPE html>
     width: 300px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     position: relative;
   }
   #profile-box h3 { font-size: 15px; font-weight: 600; }
@@ -454,12 +470,18 @@ export const HTML = `<!DOCTYPE html>
   .color-row #color-input { flex: 0 0 40px; }
   #color-input {
     height: 32px;
-    border: 1px solid var(--border);
+    border: none;
     border-radius: 4px;
     cursor: pointer;
-    background: var(--bg);
-    padding: 2px;
+    padding: 0;
+    /* Strip the browser's default swatch chrome so the entire box is a
+       solid block of the picked color (no inner padding, no frame). */
+    -webkit-appearance: none;
+    appearance: none;
   }
+  #color-input::-webkit-color-swatch-wrapper { padding: 0; }
+  #color-input::-webkit-color-swatch { border: none; border-radius: 4px; }
+  #color-input::-moz-color-swatch { border: none; border-radius: 4px; }
   #color-warn {
     margin-top: 4px;
     font-size: 11px;
@@ -654,8 +676,8 @@ export const HTML = `<!DOCTYPE html>
       <div id="input-bar">
         <div id="mention-suggest" role="listbox"></div>
         <div id="input-wrap">
-          <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
-          <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send" style="display:none;">
+          <input type="text" id="msg-input" placeholder="Message Shoutbox" maxlength="500" autocomplete="off">
+          <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send" style="visibility:hidden;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
           </button>
         </div>
@@ -756,8 +778,6 @@ export const HTML = `<!DOCTYPE html>
         <button class="btn btn-danger" id="profile-delete" type="button">Delete account</button>
       </div>
       <button class="btn" id="build-provenance-btn" type="button">Build provenance</button>
-    </div>
-    <div class="actions">
       <button class="btn btn-primary" id="profile-save">Save</button>
     </div>
   </div>
@@ -1376,7 +1396,7 @@ export const HTML = `<!DOCTYPE html>
 
       if (data.type === 'rate_limit') {
         msgInput.placeholder = 'Slow down...';
-        setTimeout(() => { msgInput.placeholder = 'Type a message...'; }, data.retryMs || 3000);
+        setTimeout(() => { msgInput.placeholder = 'Message Shoutbox'; }, data.retryMs || 3000);
       }
     });
 
@@ -1455,10 +1475,12 @@ export const HTML = `<!DOCTYPE html>
     msgInput.focus();
   }
 
-  // Send button only appears once the user has typed something. Trim so
-  // whitespace alone doesn't count.
+  // Send button only appears once the user has typed something. We
+  // toggle visibility rather than display so the button keeps its slot
+  // in the flex row — otherwise the text input jumps wider/narrower
+  // each time the button appears or disappears.
   function updateSendVisibility() {
-    sendBtn.style.display = msgInput.value.trim() ? '' : 'none';
+    sendBtn.style.visibility = msgInput.value.trim() ? 'visible' : 'hidden';
   }
 
   sendBtn.addEventListener('click', sendMsg);
@@ -2037,6 +2059,20 @@ export const HTML = `<!DOCTYPE html>
   });
 
   window.addEventListener('resize', updateUserOverflow);
+
+  // Pin the chat screen to the actual visual viewport height so iOS
+  // Safari keeps the input bar flush with the top of the keyboard
+  // instead of letting the page scroll below it. dvh handles most
+  // browsers, but visualViewport is more reliable when the keyboard
+  // toggles.
+  if (window.visualViewport) {
+    const pin = () => {
+      chatScreen.style.height = window.visualViewport.height + 'px';
+    };
+    window.visualViewport.addEventListener('resize', pin);
+    window.visualViewport.addEventListener('scroll', pin);
+    pin();
+  }
 
   // --- Boot ---
   loadVersion();
