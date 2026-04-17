@@ -258,30 +258,50 @@ async function reserveUsername(env, base, email) {
   return base + Math.floor(Math.random() * 9999);
 }
 
-async function loadOrCreateProfile(env, email, secret) {
-  const key = `profile:${email}`;
+// `ownerId` here is the stable account identifier. For accounts created via
+// magic-link it equals the email address at signup time; for passkey-first
+// accounts it's a synthetic 'pk:<uuid>'. The *current* email (which may differ
+// from the original) lives in profile.email and is indexed separately via
+// emailIndex for login lookups.
+async function loadOrCreateProfile(env, ownerId, secret) {
+  const key = `profile:${ownerId}`;
+  const isEmailOwner = !ownerId.startsWith('pk:');
   const raw = await env.KV.get(key);
   if (raw) {
     const p = JSON.parse(raw);
     let dirty = false;
-    if (!p.fingerprint) { p.fingerprint = await fingerprint(secret, email); dirty = true; }
+    if (!p.fingerprint) { p.fingerprint = await fingerprint(secret, ownerId); dirty = true; }
     if (!p.created_at)  { p.created_at = new Date().toISOString(); dirty = true; }
+    // Backfill profile.email for legacy accounts created before email was a
+    // first-class field (when ownerId was the email).
+    if (isEmailOwner && !p.email) { p.email = ownerId; dirty = true; }
     if (p.username && !(await env.KV.get(`username:${p.username}`))) {
-      await env.KV.put(`username:${p.username}`, email);
+      await env.KV.put(`username:${p.username}`, ownerId);
     }
     if (dirty) await env.KV.put(key, JSON.stringify(p));
     return p;
   }
-  const base = await defaultUsername(email, secret);
-  const username = await reserveUsername(env, base, email);
+  const base = await defaultUsername(ownerId, secret);
+  const username = await reserveUsername(env, base, ownerId);
   const profile = {
     username,
-    color: await defaultColor(email, secret),
-    fingerprint: await fingerprint(secret, email),
+    color: await defaultColor(ownerId, secret),
+    fingerprint: await fingerprint(secret, ownerId),
     created_at: new Date().toISOString(),
   };
+  if (isEmailOwner) profile.email = ownerId;
   await env.KV.put(key, JSON.stringify(profile));
   return profile;
+}
+
+// Resolve a login email to the account ownerId. Legacy accounts (ownerId ==
+// email, no emailIndex yet) are backfilled on first lookup so the index
+// becomes authoritative going forward.
+async function resolveOwnerIdForEmail(env, email) {
+  const existing = await env.KV.get(`emailIndex:${email}`);
+  if (existing) return existing;
+  await env.KV.put(`emailIndex:${email}`, email);
+  return email;
 }
 
 async function saveSession(env, sid, session) {
@@ -973,7 +993,8 @@ async function handleRequest(request, env) {
         return json({ error: 'Wrong code' }, 400);
       }
       await env.KV.delete(key);
-      const sid = await createSession(env, email, secret);
+      const ownerId = await resolveOwnerIdForEmail(env, email);
+      const sid = await createSession(env, ownerId, secret);
       return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }) });
     }
 
@@ -990,7 +1011,8 @@ async function handleRequest(request, env) {
       }
       await env.KV.delete(`magic:${token}`);
 
-      const sid = await createSession(env, email, secret);
+      const ownerId = await resolveOwnerIdForEmail(env, email);
+      const sid = await createSession(env, ownerId, secret);
 
       return new Response(null, {
         status: 302,
@@ -1007,14 +1029,166 @@ async function handleRequest(request, env) {
       const session = await loadSession(env, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
       const passkeyCount = (await listCredentialIds(env, session.email)).length;
-      const hasEmail = !String(session.email).startsWith('pk:');
+      // Email can be changed/removed independently of the ownerId, so the
+      // current value lives on the profile record.
+      const profile = await loadOrCreateProfile(env, session.email, secret);
+      const email = profile.email || null;
       return json({
         username: session.username,
         color: session.color,
         fingerprint: session.fingerprint,
         passkeyCount,
-        hasEmail,
+        hasEmail: !!email,
+        email,
       });
+    }
+
+    if (url.pathname === '/auth/email/send' && request.method === 'POST') {
+      const sid = getCookie(request, 'sid');
+      if (!sid) return json({ error: 'Not signed in' }, 401);
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
+      const ownerId = session.email;
+
+      const body = await request.json().catch(() => ({}));
+      const newEmail = (body.email || '').trim().toLowerCase();
+      if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        return json({ error: 'Invalid email' }, 400);
+      }
+
+      // Per-IP, per-account, and per-target-address rate limits.
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const ipRl = await rateLimit(env, `email_chg_ip_rl:${ipHash}`, 20, 60 * 60);
+      if (!ipRl.ok) return json({ error: 'Too many requests' }, 429);
+      const ownerRl = await rateLimit(env, `email_chg_rl:${ownerId}`, 5, 60 * 60);
+      if (!ownerRl.ok) return json({ error: 'Too many requests' }, 429);
+      const targetRl = await rateLimit(env, `email_chg_target:${newEmail}`, 5, 60 * 60);
+      if (!targetRl.ok) return json({ error: 'Too many requests' }, 429);
+
+      // Conflict checks: email must not be claimed by a different account.
+      const existingOwner = await env.KV.get(`emailIndex:${newEmail}`);
+      if (existingOwner && existingOwner !== ownerId) {
+        return json({ error: 'Email already in use' }, 409);
+      }
+      if (existingOwner === ownerId) {
+        return json({ error: 'That is already your email' }, 400);
+      }
+      // Legacy accounts may not have an emailIndex entry yet but still own
+      // profile:<email>; refuse to stomp on them.
+      if (newEmail !== ownerId && (await env.KV.get(`profile:${newEmail}`))) {
+        return json({ error: 'Email already in use' }, 409);
+      }
+
+      if (!env.EMAIL_API_KEY && !isDev(request, env)) {
+        return json({ error: 'Email service not configured' }, 500);
+      }
+
+      const token = crypto.randomUUID() + crypto.randomUUID();
+      await env.KV.put(
+        `emailChange:${token}`,
+        JSON.stringify({ ownerId, email: newEmail }),
+        { expirationTtl: 600 },
+      );
+
+      const base = env.BASE_URL || url.origin;
+      const link = `${base}/auth/email/verify?token=${token}`;
+
+      if (env.EMAIL_API_KEY) {
+        const emailRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.EMAIL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: env.EMAIL_FROM || 'chat@example.com',
+            to: [newEmail],
+            subject: 'Confirm your new chat email',
+            html: `<p>Click to link this address to your chat account:</p><p><a href="${link}">${link}</a></p><p>Expires in 10 minutes. If you didn't request this, ignore this message.</p>`,
+          }),
+        });
+        if (!emailRes.ok) {
+          const err = await emailRes.text();
+          console.error('Email API error:', err);
+          return json({ error: 'Failed to send email' }, 500);
+        }
+        return json({ ok: true });
+      }
+
+      return json({ ok: true, dev_link: link });
+    }
+
+    if (url.pathname === '/auth/email/verify' && request.method === 'GET') {
+      const token = url.searchParams.get('token');
+      if (!token) return json({ error: 'Missing token' }, 400);
+
+      const raw = await env.KV.get(`emailChange:${token}`);
+      if (!raw) {
+        return new Response('Invalid or expired link. <a href="/">Return to chat</a>', {
+          status: 400,
+          headers: { 'Content-Type': 'text/html' },
+        });
+      }
+      await env.KV.delete(`emailChange:${token}`);
+      const { ownerId, email: newEmail } = JSON.parse(raw);
+
+      const profileRaw = await env.KV.get(`profile:${ownerId}`);
+      if (!profileRaw) {
+        return new Response('Account not found. <a href="/">Return</a>', {
+          status: 404, headers: { 'Content-Type': 'text/html' },
+        });
+      }
+      const profile = JSON.parse(profileRaw);
+
+      // Re-check conflict: the token could have been issued before someone
+      // else claimed the same address.
+      const existingOwner = await env.KV.get(`emailIndex:${newEmail}`);
+      if (existingOwner && existingOwner !== ownerId) {
+        return new Response('That email is now in use. <a href="/">Return</a>', {
+          status: 409, headers: { 'Content-Type': 'text/html' },
+        });
+      }
+
+      const oldEmail = profile.email;
+      profile.email = newEmail;
+      await env.KV.put(`profile:${ownerId}`, JSON.stringify(profile));
+      await env.KV.put(`emailIndex:${newEmail}`, ownerId);
+      if (oldEmail && oldEmail !== newEmail) {
+        const pointer = await env.KV.get(`emailIndex:${oldEmail}`);
+        if (pointer === ownerId) await env.KV.delete(`emailIndex:${oldEmail}`);
+      }
+
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/?email_updated=1' },
+      });
+    }
+
+    if (url.pathname === '/auth/email/remove' && request.method === 'POST') {
+      const sid = getCookie(request, 'sid');
+      if (!sid) return json({ error: 'Not signed in' }, 401);
+      const session = await loadSession(env, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
+      const ownerId = session.email;
+
+      // Require at least one passkey so the user retains a way to sign in.
+      const credIds = await listCredentialIds(env, ownerId);
+      if (credIds.length === 0) {
+        return json({ error: 'Add a passkey before removing your email so you can still sign in.' }, 400);
+      }
+
+      const profileRaw = await env.KV.get(`profile:${ownerId}`);
+      if (!profileRaw) return json({ error: 'Not found' }, 404);
+      const profile = JSON.parse(profileRaw);
+      const oldEmail = profile.email;
+      if (!oldEmail) return json({ error: 'No email to remove' }, 400);
+
+      delete profile.email;
+      await env.KV.put(`profile:${ownerId}`, JSON.stringify(profile));
+      const pointer = await env.KV.get(`emailIndex:${oldEmail}`);
+      if (pointer === ownerId) await env.KV.delete(`emailIndex:${oldEmail}`);
+
+      return json({ ok: true });
     }
 
     if (url.pathname.startsWith('/user/') && request.method === 'GET') {

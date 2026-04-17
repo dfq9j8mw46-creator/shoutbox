@@ -28,14 +28,19 @@ export const HTML = `<!DOCTYPE html>
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
 
-  /* --- Sidebar title (top of users panel) -------------------------------- */
+  /* --- Sidebar title ----------------------------------------------------- */
+  /* On desktop the title sits at the *bottom* of the users panel (card uses
+     flex-direction: column-reverse) so the separator goes above it. On
+     mobile the panel uses normal column direction so the title sits at the
+     top and the separator flips back to border-bottom inside the media
+     query below. */
   #sidebar-title {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
     padding: 10px 14px 8px;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
   #sidebar-title h1 { font-size: 14px; font-weight: 600; letter-spacing: .5px; }
@@ -54,19 +59,23 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
   }
   #users-panel {
-    margin: 12px;
+    /* Desktop: anchor the card to the bottom-right so the title row sits
+       level with the input bar. Users list lives above the title and grows
+       upward (flex-direction: column-reverse reverses the DOM order of
+       sidebar-title + users-list without needing to change the markup). */
+    margin: 0 12px 0 0;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
     display: flex;
-    flex-direction: column;
+    flex-direction: column-reverse;
     flex-shrink: 0;
     overflow: hidden;
     min-width: 140px;
     max-width: 220px;
     width: max-content;
-    align-self: flex-start;
-    max-height: calc(100% - 24px);
+    align-self: flex-end;
+    max-height: 100%;
   }
   #users-list {
     list-style: none;
@@ -97,11 +106,16 @@ export const HTML = `<!DOCTYPE html>
       min-width: 0;
       max-height: 33vh;
       align-self: auto;
+      flex-direction: column;
     }
     /* Keep the title bar visible when collapsed so users have a tap target
        to expand again; only the user list folds away. */
     #users-panel.collapsed-mobile #users-list { display: none; }
-    #sidebar-title { cursor: pointer; }
+    #sidebar-title {
+      cursor: pointer;
+      border-top: none;
+      border-bottom: 1px solid var(--border);
+    }
   }
 
   /* --- Icon buttons ------------------------------------------------------ */
@@ -179,6 +193,16 @@ export const HTML = `<!DOCTYPE html>
     flex-shrink: 0;
     position: relative;
   }
+  /* Icon buttons inside the input bar match the text input's box: same
+     border, radius, and vertical padding so all three elements align. */
+  #input-bar .btn {
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  #input-bar #profile-btn { background: var(--bg); color: var(--text); }
+  #input-bar #profile-btn:hover { background: var(--border); }
+  #input-bar #send-btn { border-color: var(--accent); }
 
   /* --- @mention autocomplete -------------------------------------------- */
   #mention-suggest {
@@ -186,7 +210,7 @@ export const HTML = `<!DOCTYPE html>
     bottom: calc(100% + 4px);
     /* Aligned with the left edge of #msg-input, which now sits after the
        profile icon button inside the input bar. */
-    left: 56px;
+    left: 54px;
     min-width: 180px;
     max-width: 280px;
     max-height: 220px;
@@ -303,12 +327,35 @@ export const HTML = `<!DOCTYPE html>
   #rc-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   /* --- Passkey list in profile ------------------------------------------ */
-  #pk-section {
+  #pk-section, #email-section {
     border-top: 1px solid var(--border);
     padding-top: 10px;
     display: flex; flex-direction: column; gap: 6px;
   }
-  #pk-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  #pk-section h4, #email-section h4 { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  #email-current {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px;
+  }
+  #email-value { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #email-value:empty::before { content: 'None'; color: var(--text-muted); }
+  #email-actions { display: flex; gap: 4px; }
+  #email-actions .btn { padding: 3px 8px; font-size: 11px; }
+  #email-form { display: flex; flex-direction: column; gap: 6px; }
+  #email-new-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+  }
+  #email-new-input:focus { border-color: var(--accent); }
+  .email-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  #email-msg { font-size: 11px; min-height: 14px; color: var(--text-muted); }
+  #email-msg.error { color: #ff6b6b; }
+  #email-msg.ok { color: #8fd18f; }
   .pk-row {
     display: flex; align-items: center; gap: 8px;
     font-size: 12px;
@@ -353,8 +400,23 @@ export const HTML = `<!DOCTYPE html>
     display: flex;
     flex-direction: column;
     gap: 12px;
+    position: relative;
   }
   #profile-box h3 { font-size: 15px; font-weight: 600; }
+  #profile-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    line-height: 1;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  #profile-close:hover { color: var(--text); background: var(--border); }
   #profile-box label { font-size: 12px; color: var(--text-muted); }
   #profile-box input[type="text"] {
     background: var(--bg);
@@ -594,7 +656,9 @@ export const HTML = `<!DOCTYPE html>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </button>
         <input type="text" id="msg-input" placeholder="Type a message..." maxlength="500" autocomplete="off">
-        <button class="btn btn-primary" id="send-btn">Send</button>
+        <button class="btn btn-primary icon-btn" id="send-btn" aria-label="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
       </div>
     </div>
     <aside id="users-panel">
@@ -645,6 +709,7 @@ export const HTML = `<!DOCTYPE html>
 <!-- Profile modal -->
 <div id="profile-modal">
   <div id="profile-box">
+    <button type="button" id="profile-close" aria-label="Close">&times;</button>
     <h3>Edit Profile</h3>
     <div>
       <label for="username-input">Username (1-20 chars)</label>
@@ -661,8 +726,27 @@ export const HTML = `<!DOCTYPE html>
     </div>
     <label class="toggle-row" for="notify-toggle">
       <input type="checkbox" id="notify-toggle">
-      Play sound when mentioned (@username)
+      Play sound when mentioned
     </label>
+    <div id="email-section">
+      <h4>Email</h4>
+      <div id="email-current">
+        <span id="email-value"></span>
+        <span id="email-actions">
+          <button class="btn" id="email-change-btn" type="button">Change</button>
+          <button class="btn" id="email-remove-btn" type="button">Remove</button>
+          <button class="btn" id="email-add-btn" type="button">Add email</button>
+        </span>
+      </div>
+      <div id="email-form" style="display:none;">
+        <input type="email" id="email-new-input" placeholder="new@example.com">
+        <div class="email-form-actions">
+          <button class="btn btn-primary" id="email-send-btn" type="button">Send verification</button>
+          <button class="btn" id="email-form-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <div id="email-msg"></div>
+    </div>
     <div id="pk-section">
       <h4>Passkeys</h4>
       <div id="pk-list"></div>
@@ -674,7 +758,6 @@ export const HTML = `<!DOCTYPE html>
       <button class="btn btn-danger" id="profile-delete">Delete account</button>
       <button class="btn" id="profile-logout">Log out</button>
       <span class="spacer"></span>
-      <button class="btn" id="profile-cancel">Cancel</button>
       <button class="btn btn-primary" id="profile-save">Save</button>
     </div>
   </div>
@@ -731,15 +814,26 @@ export const HTML = `<!DOCTYPE html>
   const colorPreview = document.getElementById('color-preview');
   const colorWarn    = document.getElementById('color-warn');
   const profileSave = document.getElementById('profile-save');
-  const profileCancel = document.getElementById('profile-cancel');
+  const profileClose = document.getElementById('profile-close');
   const profileDelete = document.getElementById('profile-delete');
   const notifyToggle = document.getElementById('notify-toggle');
+  const emailValue  = document.getElementById('email-value');
+  const emailActions = document.getElementById('email-actions');
+  const emailChangeBtn = document.getElementById('email-change-btn');
+  const emailRemoveBtn = document.getElementById('email-remove-btn');
+  const emailAddBtn  = document.getElementById('email-add-btn');
+  const emailForm   = document.getElementById('email-form');
+  const emailNewInput = document.getElementById('email-new-input');
+  const emailSendBtn = document.getElementById('email-send-btn');
+  const emailFormCancel = document.getElementById('email-form-cancel');
+  const emailMsg    = document.getElementById('email-msg');
   const suggestEl   = document.getElementById('mention-suggest');
   const connStatus  = document.getElementById('conn-status');
 
   let ws = null;
   let myUsername = '';
   let myColor = '';
+  let myEmail = null;
   let isAuthed = false;
   let reconnectTimer = null;
   let reconnectDelay = 1000;
@@ -905,6 +999,7 @@ export const HTML = `<!DOCTYPE html>
         const data = await res.json();
         myUsername = data.username;
         myColor = data.color;
+        myEmail = data.email || null;
         showChat();
         return;
       }
@@ -1501,6 +1596,96 @@ export const HTML = `<!DOCTYPE html>
     }
   });
 
+  function renderEmail() {
+    emailValue.textContent = myEmail || '';
+    emailForm.style.display = 'none';
+    emailNewInput.value = '';
+    emailMsg.textContent = '';
+    emailMsg.className = '';
+    emailChangeBtn.style.display = myEmail ? '' : 'none';
+    emailRemoveBtn.style.display = myEmail ? '' : 'none';
+    emailAddBtn.style.display = myEmail ? 'none' : '';
+  }
+
+  function openEmailForm(placeholder) {
+    emailForm.style.display = 'flex';
+    emailActions.style.display = 'none';
+    emailNewInput.placeholder = placeholder;
+    emailNewInput.focus();
+  }
+
+  function closeEmailForm() {
+    emailForm.style.display = 'none';
+    emailActions.style.display = '';
+    emailNewInput.value = '';
+    emailMsg.textContent = '';
+    emailMsg.className = '';
+  }
+
+  emailChangeBtn.addEventListener('click', () => openEmailForm('new@example.com'));
+  emailAddBtn.addEventListener('click', () => openEmailForm('you@example.com'));
+  emailFormCancel.addEventListener('click', closeEmailForm);
+
+  emailSendBtn.addEventListener('click', async () => {
+    const val = emailNewInput.value.trim().toLowerCase();
+    if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+      emailMsg.textContent = 'Enter a valid email address.';
+      emailMsg.className = 'error';
+      return;
+    }
+    emailSendBtn.disabled = true;
+    emailMsg.textContent = 'Sending...';
+    emailMsg.className = '';
+    try {
+      const res = await fetch('/auth/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: val }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        emailMsg.textContent = data.error || 'Failed to send';
+        emailMsg.className = 'error';
+      } else {
+        emailMsg.textContent = 'Check ' + val + ' for a verification link.';
+        emailMsg.className = 'ok';
+        if (data.dev_link) {
+          const a = document.createElement('a');
+          a.href = data.dev_link;
+          a.textContent = 'Open dev link';
+          a.target = '_blank';
+          emailMsg.appendChild(document.createTextNode(' '));
+          emailMsg.appendChild(a);
+        }
+      }
+    } catch {
+      emailMsg.textContent = 'Network error';
+      emailMsg.className = 'error';
+    } finally {
+      emailSendBtn.disabled = false;
+    }
+  });
+
+  emailRemoveBtn.addEventListener('click', async () => {
+    if (!confirm('Remove your email? You will only be able to sign in with a passkey or a recovery code.')) return;
+    try {
+      const res = await fetch('/auth/email/remove', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        emailMsg.textContent = data.error || 'Failed to remove';
+        emailMsg.className = 'error';
+        return;
+      }
+      myEmail = null;
+      renderEmail();
+      emailMsg.textContent = 'Email removed.';
+      emailMsg.className = 'ok';
+    } catch {
+      emailMsg.textContent = 'Network error';
+      emailMsg.className = 'error';
+    }
+  });
+
   profileBtn.addEventListener('click', () => {
     usernameInput.value = myUsername;
     colorInput.value = myColor.startsWith('#') ? myColor : '#5b8def';
@@ -1509,11 +1694,13 @@ export const HTML = `<!DOCTYPE html>
     colorPreview.textContent = myUsername || 'Preview';
     notifyToggle.checked = notifyOn;
     updateColorWarn();
+    renderEmail();
+    emailActions.style.display = '';
     renderPasskeys();
     profileModal.classList.add('open');
   });
 
-  profileCancel.addEventListener('click', () => profileModal.classList.remove('open'));
+  profileClose.addEventListener('click', () => profileModal.classList.remove('open'));
   profileModal.addEventListener('click', (e) => {
     if (e.target === profileModal) profileModal.classList.remove('open');
   });
