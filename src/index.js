@@ -1320,10 +1320,86 @@ async function handleRequest(request, env) {
       const ownerId = await resolveOwnerIdForEmail(env, secret, email);
       const sid = await createSession(env, ownerId, secret);
 
-      return new Response(null, {
-        status: 302,
+      // Self-closing landing page instead of a 302 to /. The original tab
+      // (already polling /auth/me) will pick up the new session and switch
+      // to chat on its own; this tab tries to close itself so the user
+      // doesn't end up with two open chat tabs. window.close() is blocked
+      // for tabs the browser doesn't consider script-openable, so the
+      // page also offers a manual close button and a "Continue" link
+      // (the latter handles the single-tab case where there's no original
+      // tab waiting).
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>Signed in</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f0f0f;
+    color: #e0e0e0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px;
+    text-align: center;
+  }
+  h1 { font-size: 18px; font-weight: 600; }
+  p { color: #777; font-size: 13px; max-width: 320px; line-height: 1.5; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+    padding: 8px 18px;
+    font-size: 13px;
+    border-radius: 999px;
+    cursor: pointer;
+    text-decoration: none;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
+  .btn-primary {
+    background: rgba(91, 141, 239, 0.20);
+    border-color: rgba(91, 141, 239, 0.45);
+    color: #fff;
+  }
+  .btn-primary:hover { background: rgba(91, 141, 239, 0.30); border-color: rgba(91, 141, 239, 0.65); }
+</style>
+</head>
+<body>
+  <h1>Signed in</h1>
+  <p>You can close this tab. Your other Shoutbox tab will pick up the session.</p>
+  <div class="actions">
+    <button class="btn" id="close-btn" type="button">Close tab</button>
+    <a class="btn btn-primary" href="/">Continue to Shoutbox</a>
+  </div>
+<script>
+  (function () {
+    var closeBtn = document.getElementById('close-btn');
+    var tryClose = function () { try { window.close(); } catch (e) {} };
+    // Best-effort auto-close shortly after landing. Browsers block
+    // window.close() for tabs they didn't open via script, so this is
+    // silent if it fails; the manual button and Continue link cover
+    // the rest.
+    setTimeout(tryClose, 600);
+    closeBtn.addEventListener('click', tryClose);
+  })();
+</script>
+</body>
+</html>`;
+      return new Response(html, {
+        status: 200,
         headers: {
-          Location: '/',
+          'Content-Type': 'text/html; charset=utf-8',
           'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }),
         },
       });
