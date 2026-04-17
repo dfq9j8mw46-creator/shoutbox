@@ -247,9 +247,12 @@ export const HTML = `<!DOCTYPE html>
     flex: 1 1 0;
     min-height: 0;
   }
-  /* Messages are plain block rows. Time isn't rendered per-message;
-     instead #messages groups consecutive messages that share the same
-     relative-time label under a single .time-divider (see the JS). */
+  /* Each message is a 3-column grid: a fixed left gutter holds the
+     timeline label, then name and text follow. The label text is only
+     populated for the first message of each group sharing a relative-
+     time bucket (see refreshTimestamps), so a run of five messages at
+     "15h ago" shows the label once at the top of the run and blank
+     cells below — forming a left-column timeline. */
   .msg {
     font-size: 13px;
     line-height: 1.45;
@@ -257,36 +260,28 @@ export const HTML = `<!DOCTYPE html>
     border-left: 2px solid transparent;
     max-width: 100%;
     min-width: 0;
-    overflow-wrap: anywhere;
-    word-break: break-all;
+    display: grid;
+    grid-template-columns: 3.5em auto 1fr;
+    column-gap: 6px;
+    align-items: baseline;
+  }
+  .msg .timeline {
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: right;
+    white-space: nowrap;
+    user-select: none;
   }
   .msg .name {
     font-weight: 600;
-    margin-right: 6px;
+    white-space: nowrap;
     cursor: default;
   }
-  .msg .text { color: var(--text); }
-
-  /* Timeline marker that sits above a group of messages sharing the
-     same relative-time label (e.g. "15h ago"). Rendered as a centered
-     label flanked by thin rules so the bucket boundaries read as a
-     subtle timeline. */
-  .time-divider {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 8px 6px 4px;
-    color: var(--text-muted);
-    font-size: 11px;
-    user-select: none;
-    flex-shrink: 0;
-  }
-  .time-divider::before,
-  .time-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.08);
+  .msg .text {
+    color: var(--text);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-all;
   }
 
   /* --- Floating input bar ----------------------------------------------- */
@@ -1561,10 +1556,15 @@ export const HTML = `<!DOCTYPE html>
     const div = document.createElement('div');
     div.className = 'msg';
     // Raw timestamp rides along on the message itself so
-    // refreshTimestamps() can recompute the timeline dividers. Absolute
-    // time stays available on hover for anyone who wants the exact moment.
+    // refreshTimestamps() can recompute the left-column timeline.
+    // Absolute time stays on hover via the title attribute.
     div.dataset.ts = String(m.ts);
     div.title = new Date(m.ts).toLocaleString();
+
+    // Empty timeline cell; refreshTimestamps fills it on the first
+    // message of each time-bucket group.
+    const timeline = document.createElement('span');
+    timeline.className = 'timeline';
 
     const name = document.createElement('span');
     name.className = 'name clickable-name';
@@ -1581,12 +1581,12 @@ export const HTML = `<!DOCTYPE html>
       if (isLive) playNotification();
     }
 
+    div.appendChild(timeline);
     div.appendChild(name);
     div.appendChild(text);
     messagesDiv.appendChild(div);
 
-    // Keep DOM limited to 100 messages (dividers don't count toward the cap;
-    // they're rebuilt from scratch by refreshTimestamps on every tick).
+    // Keep DOM limited to 100 messages.
     while (messagesDiv.querySelectorAll('.msg').length > 100) {
       const first = messagesDiv.firstElementChild;
       if (!first) break;
@@ -1594,28 +1594,20 @@ export const HTML = `<!DOCTYPE html>
     }
   }
 
-  // Rebuild the timeline dividers. We remove every existing .time-divider
-  // and walk the messages in DOM order, inserting a fresh divider before
-  // each group whose label differs from the previous message's. Scroll
-  // position is anchored to the bottom so a user sitting at "now" stays
-  // there and a user scrolled into history stays on the same content
-  // even if divider insertion changes the surrounding heights.
+  // Walk the messages in DOM order and populate each .timeline cell
+  // only when its label differs from the previous message's. Runs of
+  // messages sharing a bucket ("15h ago") show the label once at the
+  // top of the run and leave subsequent cells blank — a left-column
+  // timeline rather than a per-message timestamp.
   function refreshTimestamps() {
-    const anchorFromBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop;
-    messagesDiv.querySelectorAll('.time-divider').forEach((d) => d.remove());
     const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
     let prevLabel = null;
     for (const msg of msgs) {
       const label = formatRelativeTime(Number(msg.dataset.ts));
-      if (label !== prevLabel) {
-        const divider = document.createElement('div');
-        divider.className = 'time-divider';
-        divider.textContent = label;
-        msg.before(divider);
-      }
+      const timeline = msg.querySelector('.timeline');
+      if (timeline) timeline.textContent = label !== prevLabel ? label : '';
       prevLabel = label;
     }
-    messagesDiv.scrollTop = messagesDiv.scrollHeight - anchorFromBottom;
   }
 
   function scrollBottom() {
