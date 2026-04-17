@@ -709,9 +709,11 @@ export const HTML = `<!DOCTYPE html>
   .input-pill > input::placeholder { color: var(--text-muted); font-size: 13px; }
   /* Button shrunk just enough that the pill's flex height matches the
      standalone glass inputs in signup/code/recovery (~33px desktop /
-     ~46px mobile). Explicitly opts out of the mobile .btn min-height
+     ~46px mobile). Prefixed with #auth-screen so its specificity beats
+     the auth-screen .btn rule (which would otherwise inflate padding
+     to 8px 18px). Explicitly opts out of the mobile .btn min-height
      since the surrounding pill already provides the 44px tap target. */
-  .input-pill > button[type=submit] {
+  #auth-screen .input-pill > button[type=submit] {
     margin: 3px;
     padding: 4px;
     min-height: 0;
@@ -726,8 +728,8 @@ export const HTML = `<!DOCTYPE html>
     line-height: 0;
     transition: background-color 120ms ease;
   }
-  .input-pill > button[type=submit]:hover { background: #4a7de0; }
-  .input-pill > button[type=submit] > svg { display: block; }
+  #auth-screen .input-pill > button[type=submit]:hover { background: #4a7de0; }
+  #auth-screen .input-pill > button[type=submit] > svg { display: block; }
   /* Wrapper reserves enough vertical space for the worst-case status
      (a 2-3 line success/error message) plus the resend row, so the
      centered auth-screen above doesn't reflow when a message lands. */
