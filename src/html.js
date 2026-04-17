@@ -238,6 +238,13 @@ export const HTML = `<!DOCTYPE html>
   /* --- Mobile: prevent iOS auto-zoom on input focus --------------------- */
   @media (max-width: 640px) {
     input, select, textarea { font-size: 16px !important; }
+    /* Bump the chat message body too so typed text and rendered messages
+       are the same size — otherwise the input value (16px) sits next
+       to messages (13px) and the typed text reads as oversized.
+       !important because the unconditional .msg { font-size: 13px }
+       lives later in the stylesheet and would otherwise win. */
+    .msg { font-size: 16px !important; }
+    .msg .timeline { font-size: 16px !important; }
   }
 
   /* --- Small buttons ----------------------------------------------------- */
@@ -382,13 +389,10 @@ export const HTML = `<!DOCTYPE html>
     font-size: 13px;
     outline: none;
   }
-  /* Pin the placeholder to the chat-message body size (13px). The
-     iOS auto-zoom guard below forces input font-size to 16px on mobile,
-     which would otherwise drag the placeholder up to 16px too — making
-     it visibly larger than every message in the chat. The placeholder
-     itself is purely visual and doesn't affect Safari's zoom heuristic,
-     so we can pin it back down independently. */
-  #input-wrap #msg-input::placeholder { color: var(--text-muted); font-size: 13px; }
+  /* Placeholder inherits the input's font size so it matches both the
+     typed value and the surrounding messages on every viewport
+     (13px desktop, 16px mobile after the iOS-zoom guard above). */
+  #input-wrap #msg-input::placeholder { color: var(--text-muted); }
   /* Send button sits inside the pill on the right and only shows once
      the user has typed something. Toggled via [data-empty] on #input-wrap. */
   #input-wrap #send-btn {
