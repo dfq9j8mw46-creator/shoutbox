@@ -893,7 +893,7 @@ async function handleRequest(request, env) {
           body: JSON.stringify({
             from: env.EMAIL_FROM || 'chat@example.com',
             to: [email],
-            subject: 'Your chat login link',
+            subject: 'Shoutbox login link',
             html: `<p>Click to sign in:</p><p><a href="${link}">${link}</a></p><p>Expires in 10 minutes.</p>`,
           }),
         });
@@ -1054,10 +1054,12 @@ async function handleRequest(request, env) {
     }
 
     if (url.pathname === '/auth/webauthn/auth/start' && request.method === 'POST') {
-      // 30 challenge creations per hour per client; hash rotates daily so this
-      // isn't a long-term identifier.
+      // 60 challenge creations per hour per client. Conditional WebAuthn
+      // (autofill) plus the explicit Continue button means a single page
+      // visit can burn 2-3 challenges; the limit is sized to absorb that
+      // for normal use while still bounding abuse.
       const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
-      const rl = await rateLimit(env, `webauthn_rl:${ipHash}`, 30, 60 * 60);
+      const rl = await rateLimit(env, `webauthn_rl:${ipHash}`, 60, 60 * 60);
       if (!rl.ok) return json({ error: 'Too many requests' }, 429);
 
       const rpID = url.hostname;

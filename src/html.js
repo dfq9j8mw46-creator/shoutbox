@@ -1551,7 +1551,12 @@ export const HTML = `<!DOCTYPE html>
   let conditionalAbort = null;
   async function startConditionalPasskey() {
     if (!pkSupported || !pkConditionalSupported) return;
-    abortConditionalPasskey();
+    // Idempotent: a pending conditional get() outlives state changes
+    // (primary <-> email both expose webauthn-tagged inputs), so calling
+    // start again is a no-op until the previous one is aborted or
+    // resolves. Without this guard, every state toggle would burn a
+    // fresh /auth/webauthn/auth/start challenge against the rate limit.
+    if (conditionalAbort) return;
     const ac = new AbortController();
     conditionalAbort = ac;
     try {
