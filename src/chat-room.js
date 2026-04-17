@@ -13,6 +13,29 @@ const MSG_BURST = 5;
 const MSG_WINDOW_MS = 3000;
 const KICK_STRIKES = 3;
 
+// Zalgo guard: cap how many combining marks (Unicode "Mark" category)
+// can stack on a single base character. NFC normalization first collapses
+// canonical-equivalent base+combiner sequences into precomposed forms so
+// legitimate accented text (café, naïve, etc.) survives at a cost of 0
+// marks. Anything left is a genuine combining stack — two is enough for
+// every real language I can find; beyond that it's Zalgo spam that
+// overflows line heights and breaks layout for everyone in the room.
+const MAX_COMBINING_MARKS = 2;
+function limitDiacritics(s) {
+  s = s.normalize('NFC');
+  let out = '';
+  let n = 0;
+  for (const ch of s) {
+    if (/\p{M}/u.test(ch)) {
+      if (n < MAX_COMBINING_MARKS) { out += ch; n++; }
+    } else {
+      out += ch;
+      n = 0;
+    }
+  }
+  return out;
+}
+
 export class ChatRoom {
   constructor(state) {
     this.state = state;
@@ -103,7 +126,7 @@ export class ChatRoom {
     const attachment = ws.deserializeAttachment();
 
     if (data.type === 'msg' && typeof data.text === 'string') {
-      const text = data.text.trim().slice(0, 500);
+      const text = limitDiacritics(data.text.trim()).slice(0, 500);
       if (!text) return;
 
       const now = Date.now();
