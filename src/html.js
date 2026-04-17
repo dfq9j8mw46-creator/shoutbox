@@ -163,6 +163,7 @@ export const HTML = `<!DOCTYPE html>
   #messages {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     padding: 8px 12px 8px 4px;
@@ -171,11 +172,18 @@ export const HTML = `<!DOCTYPE html>
     gap: 2px;
     scroll-behavior: smooth;
   }
-  /* Stack messages from the bottom: when the list is shorter than the
-     viewport, margin-top:auto pushes everything down. When it's taller
-     and scrolls, flex collapses the auto margin so normal scrolling
-     behavior wins. */
-  #messages > *:first-child { margin-top: auto; }
+  /* Stack messages from the bottom: a zero-basis flex spacer absorbs any
+     extra height so messages hug the chat bar when the list is short.
+     When content overflows the spacer shrinks to 0 (flex-shrink: 1) and
+     normal scroll behavior wins. We use this instead of
+     `margin-top: auto` on the first child because auto-margin resolution
+     is flaky inside an overflow:auto flex container on mobile browsers
+     (the margin doesn't absorb the space and content clings to the top). */
+  #messages::before {
+    content: '';
+    flex: 1 1 0;
+    min-height: 0;
+  }
   .msg {
     font-size: 13px;
     line-height: 1.45;
