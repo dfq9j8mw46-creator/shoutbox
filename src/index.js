@@ -694,9 +694,13 @@ async function handleRequest(request, env) {
 
       if (mode === 'code') {
         const code = generateCode();
+        // Never store the plaintext code. Hash it with the worker
+        // secret so a KV dump during the 10m TTL window doesn't reveal
+        // live codes to anyone without SECRET.
+        const codeHash = await hmac(secret, 'code:' + code);
         await env.KV.put(
           `magic:code:${email}`,
-          JSON.stringify({ code, attempts: 0 }),
+          JSON.stringify({ codeHash, attempts: 0 }),
           { expirationTtl: 600 },
         );
 
@@ -715,8 +719,10 @@ async function handleRequest(request, env) {
             }),
           });
           if (!emailRes.ok) {
-            const err = await emailRes.text();
-            console.error('Email API error:', err);
+            // Avoid logging the response body — Resend sometimes echoes
+            // the recipient address in errors, which would surface as
+            // PII if Workers Logs were ever turned on.
+            console.error('Email API error: status', emailRes.status);
             return json({ error: 'Failed to send email' }, 500);
           }
           return json({ ok: true, mode: 'code' });
@@ -749,8 +755,8 @@ async function handleRequest(request, env) {
           }),
         });
         if (!emailRes.ok) {
-          const err = await emailRes.text();
-          console.error('Email API error:', err);
+          // See comment above: status only, never the body.
+          console.error('Email API error: status', emailRes.status);
           return json({ error: 'Failed to send email' }, 500);
         }
         return json({ ok: true, mode: 'link' });
@@ -1122,7 +1128,8 @@ async function handleRequest(request, env) {
         await env.KV.delete(key);
         return json({ error: 'Too many attempts - request a new code' }, 429);
       }
-      if (record.code !== code) {
+      const expected = await hmac(secret, 'code:' + code);
+      if (record.codeHash !== expected) {
         record.attempts += 1;
         await env.KV.put(key, JSON.stringify(record), { expirationTtl: 600 });
         return json({ error: 'Wrong code' }, 400);
@@ -1252,8 +1259,8 @@ async function handleRequest(request, env) {
           }),
         });
         if (!emailRes.ok) {
-          const err = await emailRes.text();
-          console.error('Email API error:', err);
+          // See comment above: status only, never the body.
+          console.error('Email API error: status', emailRes.status);
           return json({ error: 'Failed to send email' }, 500);
         }
         return json({ ok: true });
