@@ -2259,20 +2259,39 @@ export const HTML = `<!DOCTYPE html>
   // toggles.
   if (window.visualViewport) {
     const pin = () => {
+      // If the user was reading "now" before the viewport resized (e.g.
+      // the mobile keyboard just opened), keep them pinned to the
+      // bottom afterwards. Otherwise shrinking #messages leaves their
+      // scrollTop unchanged, which pushes the newest messages behind
+      // the input pill.
+      const wasNearBottom = messagesDiv.scrollHeight -
+        messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
       chatScreen.style.height = window.visualViewport.height + 'px';
       // Counter iOS's auto-scroll when the keyboard opens on input focus:
       // the window can still scroll despite overflow:hidden on html/body
       // during the focus transition, so force it back to the top.
       window.scrollTo(0, 0);
+      if (wasNearBottom) {
+        // Wait one frame for the height change to settle so scrollHeight
+        // reflects the new layout before we re-anchor to the bottom.
+        requestAnimationFrame(() => {
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+      }
     };
     window.visualViewport.addEventListener('resize', pin);
     window.visualViewport.addEventListener('scroll', pin);
     pin();
   }
   // Belt-and-suspenders for iOS: when the message input gains focus,
-  // snap the window back to the top after the browser's auto-scroll.
+  // snap the window back to the top after the browser's auto-scroll,
+  // and re-pin the message list to the bottom so the newest message
+  // sits just above the input pill instead of behind it.
   msgInput.addEventListener('focus', () => {
-    setTimeout(() => window.scrollTo(0, 0), 0);
+    setTimeout(() => {
+      window.scrollTo(0, 0);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }, 0);
   });
 
   // --- Boot ---
