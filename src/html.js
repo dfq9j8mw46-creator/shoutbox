@@ -261,12 +261,19 @@ export const HTML = `<!DOCTYPE html>
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    /* Bottom padding clears the floating input pill. No top padding:
-       messages scroll behind the floating users pills so their
+    /* Bottom padding clears the floating input pill (37.6px tall inside
+       an 8px-padded bar = 45.6px to the pill's top edge) and adds the
+       same 2px flex gap that sits between any two adjacent messages, so
+       the last message rests with the same breathing room above the
+       input pill as it would have above another message. The entry
+       animation pins the new message's bottom at this resting line, so
+       it visibly rises out of that 2px gap — adjust this padding and
+       the animation's starting point follows automatically. No top
+       padding: messages scroll behind the floating users pills so their
        backdrop-filter blur softens whatever text is currently
        underneath — the scrollbar on #messages therefore runs from the
        top of the page all the way down to the input pill. */
-    padding: 8px 12px 52px 4px;
+    padding: 8px 12px 48px 4px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -367,7 +374,13 @@ export const HTML = `<!DOCTYPE html>
     font-size: 13px;
     outline: none;
   }
-  #input-wrap #msg-input::placeholder { color: var(--text-muted); }
+  /* Pin the placeholder to the chat-message body size (13px). The
+     iOS auto-zoom guard below forces input font-size to 16px on mobile,
+     which would otherwise drag the placeholder up to 16px too — making
+     it visibly larger than every message in the chat. The placeholder
+     itself is purely visual and doesn't affect Safari's zoom heuristic,
+     so we can pin it back down independently. */
+  #input-wrap #msg-input::placeholder { color: var(--text-muted); font-size: 13px; }
   /* Send button sits inside the pill on the right and only shows once
      the user has typed something. Toggled via [data-empty] on #input-wrap. */
   #input-wrap #send-btn {
@@ -1555,9 +1568,8 @@ export const HTML = `<!DOCTYPE html>
         // skew the math. Only auto-scroll if the user is already near the
         // bottom — otherwise they're reading history and a jump is annoying.
         const nearBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
-        appendMsg(data, true);
+        appendMsg(data, true, nearBottom);
         refreshTimestamps();
-        if (nearBottom) scrollBottom();
       }
 
       if (data.type === 'online') {
@@ -1612,7 +1624,7 @@ export const HTML = `<!DOCTYPE html>
     return diffDay + 'd';
   }
 
-  function appendMsg(m, isLive) {
+  function appendMsg(m, isLive, autoScroll) {
     addKnownUser(m.username, m.color, false);
     const div = document.createElement('div');
     div.className = 'msg';
@@ -1656,6 +1668,54 @@ export const HTML = `<!DOCTYPE html>
       first.remove();
       messageCount--;
     }
+
+    if (isLive) animateMsgEntry(div, autoScroll);
+  }
+
+  // Expand the new message from height 0 to its natural height while
+  // pinning the container's scrollTop to the bottom. The growing
+  // max-height pushes existing messages up, producing a smooth scroll-up
+  // effect even though we're really just animating the new node's box.
+  function animateMsgEntry(div, autoScroll) {
+    const targetHeight = div.offsetHeight;
+    if (!targetHeight) return;
+
+    div.style.overflow = 'hidden';
+    div.style.maxHeight = '0px';
+    div.style.opacity = '0';
+    // Force the 0 state to commit before the transition kicks in.
+    void div.offsetHeight;
+    div.style.transition = 'max-height 260ms ease-out, opacity 260ms ease-out';
+    div.style.maxHeight = targetHeight + 'px';
+    div.style.opacity = '1';
+
+    const DURATION = 280;
+    let raf = 0;
+    let prevBehavior;
+    if (autoScroll) {
+      // Disable CSS smooth-scroll while we drive scrollTop per-frame —
+      // smooth scrolling on top of a per-frame pin chases its own tail.
+      prevBehavior = messagesDiv.style.scrollBehavior;
+      messagesDiv.style.scrollBehavior = 'auto';
+      const start = performance.now();
+      const tick = (now) => {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        if (now - start < DURATION) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }
+
+    setTimeout(() => {
+      if (raf) cancelAnimationFrame(raf);
+      div.style.transition = '';
+      div.style.maxHeight = '';
+      div.style.opacity = '';
+      div.style.overflow = '';
+      if (autoScroll) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        messagesDiv.style.scrollBehavior = prevBehavior;
+      }
+    }, DURATION + 20);
   }
 
   // Walk the messages newest-first and populate each .timeline cell
@@ -1663,15 +1723,24 @@ export const HTML = `<!DOCTYPE html>
   // anchors the label on the most recent message of each bucket: a
   // run of five messages at "15h ago" shows the label on the last
   // (newest) of the run, with the four older cells left blank.
+  // Seconds-precision labels ("Ns") tick every second on every visible
+  // sub-2-minute message, which is too noisy — show the seconds counter
+  // only on the very latest message and leave older sub-2-minute cells
+  // blank until they roll over into the minute bucket.
   function refreshTimestamps() {
     if (messageCount === 0) return;
     const msgs = messagesDiv.querySelectorAll('.msg[data-ts]');
+    const latestIdx = msgs.length - 1;
     let nextLabel = null;
-    for (let i = msgs.length - 1; i >= 0; i--) {
+    for (let i = latestIdx; i >= 0; i--) {
       const msg = msgs[i];
       const label = formatRelativeTime(Number(msg.dataset.ts));
       const timeline = msg.querySelector('.timeline');
-      if (timeline) timeline.textContent = label !== nextLabel ? label : '';
+      const isSeconds = label.endsWith('s');
+      let display;
+      if (isSeconds && i !== latestIdx) display = '';
+      else display = label !== nextLabel ? label : '';
+      if (timeline) timeline.textContent = display;
       nextLabel = label;
     }
   }
