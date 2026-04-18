@@ -90,6 +90,24 @@ export const PAIR_HTML = `<!DOCTYPE html>
     border-color: #fff;
     transform: scale(1.08);
   }
+  /* Custom-color tile: reads as a rainbow until the user picks, then
+     swaps to the chosen solid. A hidden native color input attached to
+     the button opens the OS picker on tap. */
+  .custom-swatch {
+    position: relative;
+    background: conic-gradient(from 0deg,
+      #ff6b6b, #ffa94d, #ffd43b, #69db7c, #4dabf7, #5b8def, #b197fc, #f783ac, #ff6b6b);
+  }
+  .custom-swatch input[type=color] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    border: 0;
+    padding: 0;
+  }
   .step-dots {
     display: flex;
     gap: 6px;
@@ -149,6 +167,63 @@ export const PAIR_HTML = `<!DOCTYPE html>
   }
   .btn-primary:hover { background: rgba(91, 141, 239, 0.32); border-color: rgba(91, 141, 239, 0.7); }
   .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  /* Loading: hide the label and drop a spinner in its place. Matches
+     the convention used on the main auth screen. */
+  .btn.loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+  }
+  .btn.loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    color: #fff;
+    animation: btn-spin 0.7s linear infinite;
+  }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
+  /* Error state: swap the button wash for a red-tinted one and show the
+     failure text right on the button itself instead of a separate line
+     below. Reverts on the caller's next state transition. */
+  .btn.err {
+    background: rgba(255, 107, 107, 0.22) !important;
+    border-color: rgba(255, 107, 107, 0.55) !important;
+    color: #fff !important;
+  }
+  /* Circular glass back button matching #auth-back on the main auth
+     screen. Used by every non-default onboarding step. */
+  .back-circle {
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #888;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    outline: none;
+    margin: 4px auto 0;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .back-circle:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+  }
+  .back-circle svg { display: block; }
   .link {
     background: none;
     border: none;
@@ -309,7 +384,8 @@ export const PAIR_HTML = `<!DOCTYPE html>
   }
 
   async function claim() {
-    setSub('Linking your other device…');
+    // Callers drive their own in-button or below-button feedback; this
+    // helper stays silent so it doesn't clobber their messaging.
     const res = await fetch('/auth/qr/claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -362,7 +438,8 @@ export const PAIR_HTML = `<!DOCTYPE html>
   }
 
   async function doPasskeySignUp(displayName) {
-    setSub('Creating passkey…');
+    // No setSub call: onboarding step 3 shows spinner + error directly on
+    // the Create passkey button rather than in the status line below.
     const startRes = await fetch('/auth/webauthn/register/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -446,6 +523,21 @@ export const PAIR_HTML = `<!DOCTYPE html>
     setTimeout(function () { input.focus(); }, 50);
   }
 
+  // Client-side mirror of the server's contrast gate (WCAG 3.0:1 vs
+   // #0f0f0f). Keeps the custom picker from accepting a color the
+   // server would later reject via /auth/profile.
+  function contrastOk(hex) {
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+    if (!m) return false;
+    const v = parseInt(m[1], 16);
+    const rgb = [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+    const chan = function (c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const l = 0.2126 * chan(rgb[0]) + 0.7152 * chan(rgb[1]) + 0.0722 * chan(rgb[2]);
+    const bg = 0.2126 * chan(0x0f) + 0.7152 * chan(0x0f) + 0.0722 * chan(0x0f);
+    const hi = Math.max(l, bg), lo = Math.min(l, bg);
+    return (hi + 0.05) / (lo + 0.05) >= 3.0;
+  }
+
   function renderOnboardColor() {
     title.textContent = 'Pick a name color';
     setSub('', null);
@@ -453,48 +545,97 @@ export const PAIR_HTML = `<!DOCTYPE html>
     body.appendChild(renderStepDots(1));
     const preview = document.createElement('div');
     preview.className = 'preview';
-    preview.textContent = '@' + onboard.username;
+    preview.textContent = onboard.username;
     preview.style.color = onboard.color;
     body.appendChild(preview);
     const grid = document.createElement('div');
     grid.className = 'color-grid';
+    const selectColor = function (c, swatchEl) {
+      onboard.color = c;
+      preview.style.color = c;
+      grid.querySelectorAll('.swatch').forEach(function (el) { el.classList.remove('selected'); });
+      swatchEl.classList.add('selected');
+    };
     COLOR_PRESETS.forEach(function (c) {
       const sw = document.createElement('button');
       sw.type = 'button';
       sw.className = 'swatch' + (onboard.color === c ? ' selected' : '');
       sw.style.background = c;
       sw.setAttribute('aria-label', 'Color ' + c);
-      sw.addEventListener('click', function () {
-        onboard.color = c;
-        preview.style.color = c;
-        grid.querySelectorAll('.swatch').forEach(function (el) { el.classList.remove('selected'); });
-        sw.classList.add('selected');
-      });
+      sw.addEventListener('click', function () { selectColor(c, sw); });
       grid.appendChild(sw);
     });
+    // Custom picker: ninth tile that opens the OS color picker.
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.className = 'swatch custom-swatch';
+    custom.setAttribute('aria-label', 'Custom color');
+    const isCustomActive = onboard.color && COLOR_PRESETS.indexOf(onboard.color) === -1;
+    if (isCustomActive) {
+      custom.style.background = onboard.color;
+      custom.classList.add('selected');
+    }
+    const picker = document.createElement('input');
+    picker.type = 'color';
+    picker.value = isCustomActive ? onboard.color : '#5b8def';
+    custom.appendChild(picker);
+    custom.addEventListener('click', function (e) {
+      if (e.target === picker) return;
+      picker.click();
+    });
+    picker.addEventListener('input', function () {
+      const c = picker.value;
+      if (!contrastOk(c)) {
+        setSub('That color is too dark to read on the chat background. Try a lighter one.', 'error');
+        return;
+      }
+      setSub('', null);
+      custom.style.background = c;
+      selectColor(c, custom);
+    });
+    grid.appendChild(custom);
     body.appendChild(grid);
     body.appendChild(button('Next', 'primary', function () { renderOnboardPasskey(); }));
-    const back = button('Back', null, function () { renderOnboardUsername(); });
-    back.className = 'link';
-    body.appendChild(back);
+    body.appendChild(circularBack(renderOnboardUsername));
   }
 
-  function renderOnboardPasskey(errorMsg) {
+  // Shared circular back button matching the main auth screen's
+   // #auth-back. Pass the render function to return to when tapped.
+  function circularBack(target) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'back-circle';
+    b.setAttribute('aria-label', 'Back');
+    b.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+    b.addEventListener('click', function () { target(); });
+    return b;
+  }
+
+  function renderOnboardPasskey() {
     title.textContent = 'Create your passkey';
-    setSub(errorMsg || '', errorMsg ? 'error' : null);
+    setSub('', null);
     clearBody();
     body.appendChild(renderStepDots(2));
     const preview = document.createElement('div');
     preview.className = 'preview';
-    preview.textContent = '@' + onboard.username;
+    preview.textContent = onboard.username;
     preview.style.color = onboard.color;
     body.appendChild(preview);
     const hint = document.createElement('div');
     hint.className = 'who';
     hint.style.textAlign = 'center';
-    hint.textContent = 'A passkey on this phone is how you sign in. No password to remember.';
+    const line1 = document.createElement('div');
+    line1.textContent = 'rooty.org uses passkey authentication only.';
+    const line2 = document.createElement('div');
+    line2.style.marginTop = '10px';
+    line2.textContent = 'No emails. No passwords.';
+    hint.appendChild(line1);
+    hint.appendChild(line2);
     body.appendChild(hint);
+    const backBtn = circularBack(renderOnboardColor);
     const btn = button('Create passkey', 'primary', async function () {
+      btn.classList.add('loading');
+      btn.classList.remove('err');
       btn.disabled = true;
       backBtn.disabled = true;
       try {
@@ -513,6 +654,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
         await claim();
         renderDone(out && out.recoveryCodes);
       } catch (e) {
+        btn.classList.remove('loading');
         btn.disabled = false;
         backBtn.disabled = false;
         const msg = (e && e.message) || 'Could not create passkey';
@@ -522,12 +664,19 @@ export const PAIR_HTML = `<!DOCTYPE html>
           renderOnboardUsername(msg);
           return;
         }
-        setSub(msg, 'error');
+        // Error surfaces on the button itself: swap its label to the
+        // failure text and tint it red. Reverts after a few seconds so
+        // the user can retry with the same primary action.
+        btn.classList.add('err');
+        btn.textContent = msg;
+        setTimeout(function () {
+          if (!btn.isConnected) return;
+          btn.classList.remove('err');
+          btn.textContent = 'Create passkey';
+        }, 4500);
       }
     });
     body.appendChild(btn);
-    const backBtn = button('Back', null, renderOnboardColor);
-    backBtn.className = 'link';
     body.appendChild(backBtn);
   }
 
@@ -547,11 +696,13 @@ export const PAIR_HTML = `<!DOCTYPE html>
     body.appendChild(who);
     setSub('Tap confirm to finish signing in on the other device.');
     const btn = button('Confirm sign-in', 'primary', async function () {
+      btn.classList.add('loading');
       btn.disabled = true;
       try {
         await claim();
         renderDone();
       } catch (e) {
+        btn.classList.remove('loading');
         btn.disabled = false;
         setSub((e && e.message) || 'Could not link device', 'error');
       }
@@ -564,6 +715,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
     setSub('', null);
     clearBody();
     const btn = button('Use passkey', 'primary', async function () {
+      btn.classList.add('loading');
       btn.disabled = true;
       try {
         await doPasskeySignIn();
@@ -574,6 +726,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
         // "user cancelled", so we can't tell the difference. Offer signup
         // as the next step and let the user back out via reload if they
         // meant to cancel.
+        btn.classList.remove('loading');
         btn.disabled = false;
         renderSignup('No passkey found on this device. Create one to sign in.');
       }
