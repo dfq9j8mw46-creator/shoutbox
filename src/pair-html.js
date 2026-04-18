@@ -174,7 +174,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <div id="root">
-    <h1 id="title">Sign in to Shoutbox</h1>
+    <h1 id="title">Shoutbox device login</h1>
     <div id="body" class="row"></div>
     <div id="sub" class="sub">Loading…</div>
   </div>
@@ -497,8 +497,8 @@ export const PAIR_HTML = `<!DOCTYPE html>
   }
 
   function renderFresh() {
-    title.textContent = 'Sign in to Shoutbox';
-    setSub('Use your passkey to finish signing in on the other device.');
+    title.textContent = 'Shoutbox device login';
+    setSub('', null);
     clearBody();
     const btn = button('Use passkey', 'primary', async function () {
       btn.disabled = true;
@@ -516,9 +516,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
       }
     });
     body.appendChild(btn);
-    const signUpLink = button('Create a new account instead', null, function () { renderSignup(); });
-    signUpLink.className = 'link';
-    body.appendChild(signUpLink);
+    body.appendChild(button('Create a new account instead', null, function () { renderSignup(); }));
   }
 
   async function boot() {

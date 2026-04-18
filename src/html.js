@@ -1035,7 +1035,7 @@ export const HTML = `<!DOCTYPE html>
         <div id="qr-card">
           <div id="qr-svg-host"></div>
         </div>
-        <div id="qr-hint">Open the camera on your phone and point it at the code</div>
+        <div id="qr-hint">We only use passkeys. Scan with your phone to log in because passkeys are poorly implemented on Windows.</div>
       </div>
 
       <div id="auth-primary" style="display:none;">
@@ -1704,7 +1704,7 @@ export const HTML = `<!DOCTYPE html>
     stopQrPolling();
     qrSvgHost.textContent = '';
     qrCard.classList.remove('expired');
-    qrHint.textContent = 'Open the camera on your phone and point it at the code';
+    qrHint.textContent = 'We only use passkeys. Scan with your phone to log in because passkeys are poorly implemented on Windows.';
     setStatus('');
     try {
       const res = await fetch('/auth/qr/start', { method: 'POST' });
