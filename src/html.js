@@ -1518,7 +1518,7 @@ export const HTML = `<!DOCTYPE html>
     [50, 200, 400, 800, 1500, 2500].forEach((ms) => {
       setTimeout(() => {
         if (chatOpenedAt && Date.now() - chatOpenedAt < POST_LOGIN_PIN_MS) {
-          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          scrollBottom();
         }
       }, ms);
     });
@@ -2161,7 +2161,14 @@ export const HTML = `<!DOCTYPE html>
   }
 
   function scrollBottom() {
+    // Startup/layout rescue paths need to land immediately at the newest
+    // message. #messages uses smooth scrolling for live chat movement, so
+    // temporarily override that behavior here before restoring it.
+    const prevBehavior = messagesDiv.style.scrollBehavior;
+    messagesDiv.style.scrollBehavior = 'auto';
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    if (prevBehavior) messagesDiv.style.scrollBehavior = prevBehavior;
+    else messagesDiv.style.removeProperty('scroll-behavior');
   }
 
   // --- Send message ---
@@ -2723,7 +2730,7 @@ export const HTML = `<!DOCTYPE html>
   if (typeof ResizeObserver === 'function') {
     const ro = new ResizeObserver(() => {
       if (chatOpenedAt && Date.now() - chatOpenedAt < POST_LOGIN_PIN_MS) {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        scrollBottom();
       }
     });
     ro.observe(messagesDiv);
@@ -2741,8 +2748,8 @@ export const HTML = `<!DOCTYPE html>
   document.addEventListener('visibilitychange', () => {
     if (document.hidden || !chatOpenedAt) return;
     if (Date.now() - chatOpenedAt < POST_LOGIN_PIN_MS) {
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      requestAnimationFrame(() => { messagesDiv.scrollTop = messagesDiv.scrollHeight; });
+      scrollBottom();
+      requestAnimationFrame(scrollBottom);
     }
   });
 
@@ -2782,11 +2789,10 @@ export const HTML = `<!DOCTYPE html>
         // every frame once we're already at 0.
         if (window.scrollY !== 0) window.scrollTo(0, 0);
         if (wasNearBottom) {
-          // behavior: 'auto' bypasses the CSS scroll-behavior: smooth
-          // on #messages. A smooth scroll here would chase the bottom
-          // every frame of the keyboard animation and always trail it,
-          // which is exactly what the stutter looked like.
-          messagesDiv.scrollTo({ top: messagesDiv.scrollHeight, behavior: 'auto' });
+          // Jump instead of smoothing here. While the keyboard animates,
+          // a smooth scroll trails the moving bottom edge and visibly
+          // lags behind it.
+          scrollBottom();
         }
       });
     };
@@ -2801,7 +2807,7 @@ export const HTML = `<!DOCTYPE html>
   msgInput.addEventListener('focus', () => {
     setTimeout(() => {
       window.scrollTo(0, 0);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      scrollBottom();
     }, 0);
   });
 
