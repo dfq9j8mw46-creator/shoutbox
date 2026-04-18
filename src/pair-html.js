@@ -159,19 +159,58 @@ export const PAIR_HTML = `<!DOCTYPE html>
     font-family: inherit;
   }
   .link:hover { text-decoration: underline; }
-  input[type=text] {
+  /* Pill wrapping an input with an inline send-arrow. Same shape the chat
+     input (#input-wrap + #send-btn) uses, so the onboarding username
+     field advances on the same control users hit everywhere else.
+     Arrow visibility is driven by whether the input has content. */
+  .input-pill {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    min-height: 48px;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .input-pill:focus-within {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  .input-pill > input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
     color: #e0e0e0;
     padding: 12px 16px;
-    border-radius: 999px;
     font-size: 16px;
     min-height: 48px;
     outline: none;
-    width: 100%;
-    transition: background-color 120ms ease, border-color 120ms ease;
+    font: inherit;
   }
-  input[type=text]:focus { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.3); }
+  .input-pill > input::placeholder { color: #888; }
+  .input-pill > .pill-submit {
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    margin: 4px;
+    padding: 8px;
+    min-height: 0;
+    border: none;
+    border-radius: 999px;
+    background: #5b8def;
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    transition: background-color 120ms ease, opacity 120ms ease;
+  }
+  .input-pill > .pill-submit:hover { background: #4a7de0; }
+  .input-pill > .pill-submit svg { display: block; }
   .check {
     width: 56px; height: 56px; border-radius: 50%;
     background: rgba(143, 209, 143, 0.18);
@@ -370,6 +409,8 @@ export const PAIR_HTML = `<!DOCTYPE html>
     setSub(errorMsg || '', errorMsg ? 'error' : null);
     clearBody();
     body.appendChild(renderStepDots(0));
+    const pill = document.createElement('div');
+    pill.className = 'input-pill';
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = 'Username';
@@ -378,7 +419,15 @@ export const PAIR_HTML = `<!DOCTYPE html>
     input.autocapitalize = 'none';
     input.autocomplete = 'username webauthn';
     input.spellcheck = false;
-    body.appendChild(input);
+    pill.appendChild(input);
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'pill-submit';
+    submit.setAttribute('aria-label', 'Continue');
+    submit.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>';
+    submit.style.visibility = input.value.trim() ? 'visible' : 'hidden';
+    pill.appendChild(submit);
+    body.appendChild(pill);
     const go = function () {
       const name = input.value.trim();
       if (!/^[a-zA-Z0-9_\\-]{1,20}$/.test(name)) {
@@ -389,8 +438,11 @@ export const PAIR_HTML = `<!DOCTYPE html>
       onboard.username = name;
       renderOnboardColor();
     };
+    input.addEventListener('input', function () {
+      submit.style.visibility = input.value.trim() ? 'visible' : 'hidden';
+    });
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
-    body.appendChild(button('Next', 'primary', go));
+    submit.addEventListener('click', go);
     setTimeout(function () { input.focus(); }, 50);
   }
 
