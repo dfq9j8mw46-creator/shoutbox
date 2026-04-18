@@ -120,6 +120,12 @@ export const PAIR_HTML = `<!DOCTYPE html>
   .recovery-label { font-size: 13px; color: #bbb; text-align: left; line-height: 1.5; }
   .who b { color: #fff; }
   .btn {
+    /* Reset the native button chrome so mobile Chrome/Safari don't draw
+       their default focus ring or tap highlight on the pill edges. */
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    font: inherit;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.14);
     color: #e0e0e0;
@@ -128,9 +134,14 @@ export const PAIR_HTML = `<!DOCTYPE html>
     border-radius: 999px;
     cursor: pointer;
     min-height: 48px;
+    outline: none;
     transition: background-color 120ms ease, border-color 120ms ease;
   }
   .btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.26); }
+  .btn:focus-visible {
+    border-color: rgba(91, 141, 239, 0.8);
+    box-shadow: 0 0 0 2px rgba(91, 141, 239, 0.35);
+  }
   .btn-primary {
     background: rgba(91, 141, 239, 0.22);
     border-color: rgba(91, 141, 239, 0.5);
