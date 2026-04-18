@@ -49,14 +49,32 @@ export const PAIR_HTML = `<!DOCTYPE html>
   .sub.ok { color: #8fd18f; }
   /* #root is centered in the body; pulling #sub out of its flow means
      status/error copy of any length renders under the buttons without
-     re-centering the card and nudging them up. */
+     re-centering the card and nudging them up. A fixed min-height holds
+     the title and back-slot at the same viewport y across every step,
+     so switching panes doesn't feel like the header is jumping. */
   #root {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 14px;
     width: 100%;
     max-width: 340px;
+    min-height: 520px;
+    gap: 18px;
+  }
+  #body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+  }
+  /* Reserved slot for the back button. Empty on the default step so
+     its absence doesn't shrink the card and shift the title up. */
+  #back-slot {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 44px;
   }
   .who { font-size: 14px; color: #bbb; }
   /* Onboarding preview: the username rendered in the color the user is
@@ -91,10 +109,15 @@ export const PAIR_HTML = `<!DOCTYPE html>
     transform: scale(1.08);
   }
   /* Custom-color tile: reads as a rainbow until the user picks, then
-     swaps to the chosen solid. A hidden native color input attached to
-     the button opens the OS picker on tap. */
+     swaps to the chosen solid (set inline via JS). A visually-hidden
+     native color input fills the swatch so clicking anywhere on the
+     tile hits the input and opens the OS picker. Using a <label>
+     wrapper means no extra JS click forwarding, which matters on
+     mobile Safari where programmatic .click() on an opacity:0 input
+     doesn't always show the picker. */
   .custom-swatch {
     position: relative;
+    overflow: hidden;
     background: conic-gradient(from 0deg,
       #ff6b6b, #ffa94d, #ffd43b, #69db7c, #4dabf7, #5b8def, #b197fc, #f783ac, #ff6b6b);
   }
@@ -104,9 +127,10 @@ export const PAIR_HTML = `<!DOCTYPE html>
     width: 100%;
     height: 100%;
     opacity: 0;
-    pointer-events: none;
+    cursor: pointer;
     border: 0;
     padding: 0;
+    background: transparent;
   }
   .step-dots {
     display: flex;
@@ -215,7 +239,6 @@ export const PAIR_HTML = `<!DOCTYPE html>
     justify-content: center;
     line-height: 0;
     outline: none;
-    margin: 4px auto 0;
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   }
   .back-circle:hover {
@@ -301,6 +324,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
   <div id="root">
     <h1 id="title">Shoutbox device login</h1>
     <div id="body" class="row"></div>
+    <div id="back-slot"></div>
     <div id="sub" class="sub">Loading…</div>
   </div>
 <script>
@@ -308,6 +332,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
   const title = document.getElementById('title');
   const sub = document.getElementById('sub');
   const body = document.getElementById('body');
+  const backSlot = document.getElementById('back-slot');
   const token = new URLSearchParams(location.search).get('t') || '';
 
   function setSub(text, kind) {
@@ -315,6 +340,18 @@ export const PAIR_HTML = `<!DOCTYPE html>
     sub.className = 'sub' + (kind ? ' ' + kind : '');
   }
   function clearBody() { while (body.firstChild) body.removeChild(body.firstChild); }
+  function clearBack() { while (backSlot.firstChild) backSlot.removeChild(backSlot.firstChild); }
+  function setBack(target) {
+    clearBack();
+    if (!target) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'back-circle';
+    b.setAttribute('aria-label', 'Back');
+    b.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+    b.addEventListener('click', function () { target(); });
+    backSlot.appendChild(b);
+  }
   function button(label, variant, handler) {
     const b = document.createElement('button');
     b.className = 'btn' + (variant === 'primary' ? ' btn-primary' : '');
@@ -400,6 +437,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
     title.textContent = 'Signed in';
     setSub('Return to your other device. It will switch to chat automatically.', 'ok');
     clearBody();
+    clearBack();
     const check = document.createElement('div');
     check.className = 'check';
     check.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -420,6 +458,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
     title.textContent = 'Link expired';
     setSub('The pairing code expired. Go back to the other device and generate a new one.', 'error');
     clearBody();
+    clearBack();
   }
 
   async function doPasskeySignIn() {
@@ -485,6 +524,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
     title.textContent = 'Pick a username';
     setSub(errorMsg || '', errorMsg ? 'error' : null);
     clearBody();
+    clearBack();
     body.appendChild(renderStepDots(0));
     const pill = document.createElement('div');
     pill.className = 'input-pill';
@@ -542,6 +582,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
     title.textContent = 'Pick a name color';
     setSub('', null);
     clearBody();
+    setBack(renderOnboardUsername);
     body.appendChild(renderStepDots(1));
     const preview = document.createElement('div');
     preview.className = 'preview';
@@ -565,9 +606,11 @@ export const PAIR_HTML = `<!DOCTYPE html>
       sw.addEventListener('click', function () { selectColor(c, sw); });
       grid.appendChild(sw);
     });
-    // Custom picker: ninth tile that opens the OS color picker.
-    const custom = document.createElement('button');
-    custom.type = 'button';
+    // Custom picker: a <label> wrapping a native color input. Clicking
+    // anywhere on the tile activates the input (label semantics), which
+    // opens the OS color picker. Avoids the mobile-Safari quirk where
+    // programmatic picker.click() on a truly-hidden input is a no-op.
+    const custom = document.createElement('label');
     custom.className = 'swatch custom-swatch';
     custom.setAttribute('aria-label', 'Custom color');
     const isCustomActive = onboard.color && COLOR_PRESETS.indexOf(onboard.color) === -1;
@@ -579,10 +622,6 @@ export const PAIR_HTML = `<!DOCTYPE html>
     picker.type = 'color';
     picker.value = isCustomActive ? onboard.color : '#5b8def';
     custom.appendChild(picker);
-    custom.addEventListener('click', function (e) {
-      if (e.target === picker) return;
-      picker.click();
-    });
     picker.addEventListener('input', function () {
       const c = picker.value;
       if (!contrastOk(c)) {
@@ -596,25 +635,13 @@ export const PAIR_HTML = `<!DOCTYPE html>
     grid.appendChild(custom);
     body.appendChild(grid);
     body.appendChild(button('Next', 'primary', function () { renderOnboardPasskey(); }));
-    body.appendChild(circularBack(renderOnboardUsername));
-  }
-
-  // Shared circular back button matching the main auth screen's
-   // #auth-back. Pass the render function to return to when tapped.
-  function circularBack(target) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'back-circle';
-    b.setAttribute('aria-label', 'Back');
-    b.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
-    b.addEventListener('click', function () { target(); });
-    return b;
   }
 
   function renderOnboardPasskey() {
     title.textContent = 'Create your passkey';
     setSub('', null);
     clearBody();
+    setBack(renderOnboardColor);
     body.appendChild(renderStepDots(2));
     const preview = document.createElement('div');
     preview.className = 'preview';
@@ -632,12 +659,12 @@ export const PAIR_HTML = `<!DOCTYPE html>
     hint.appendChild(line1);
     hint.appendChild(line2);
     body.appendChild(hint);
-    const backBtn = circularBack(renderOnboardColor);
     const btn = button('Create passkey', 'primary', async function () {
+      const backBtn = backSlot.querySelector('.back-circle');
       btn.classList.add('loading');
       btn.classList.remove('err');
       btn.disabled = true;
-      backBtn.disabled = true;
+      if (backBtn) backBtn.disabled = true;
       try {
         const out = await doPasskeySignUp(onboard.username);
         // Server-generated profile used defaultColor(ownerId); apply the
@@ -656,7 +683,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
       } catch (e) {
         btn.classList.remove('loading');
         btn.disabled = false;
-        backBtn.disabled = false;
+        if (backBtn) backBtn.disabled = false;
         const msg = (e && e.message) || 'Could not create passkey';
         // Username collisions are caught at register/start; bounce back
         // to step 1 so the user can pick a different one.
@@ -677,7 +704,6 @@ export const PAIR_HTML = `<!DOCTYPE html>
       }
     });
     body.appendChild(btn);
-    body.appendChild(backBtn);
   }
 
   function renderSignup(errorMsg) {
@@ -689,6 +715,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
 
   function renderSignedInConfirm(username) {
     title.textContent = 'Sign in on your other device?';
+    clearBack();
     const who = document.createElement('div');
     who.className = 'who';
     who.innerHTML = 'You are <b></b> on this phone.';
@@ -714,6 +741,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
     title.textContent = 'Shoutbox device login';
     setSub('', null);
     clearBody();
+    clearBack();
     const btn = button('Use passkey', 'primary', async function () {
       btn.classList.add('loading');
       btn.disabled = true;
@@ -732,7 +760,7 @@ export const PAIR_HTML = `<!DOCTYPE html>
       }
     });
     body.appendChild(btn);
-    body.appendChild(button('Create a new account instead', null, function () { renderSignup(); }));
+    body.appendChild(button('Create account', null, function () { renderSignup(); }));
   }
 
   async function boot() {
