@@ -19,7 +19,6 @@ before(async () => {
     persistTo,
     vars: {
       BASE_URL: '',
-      DEV_MODE: 'true',
       SECRET: 'test-secret',
     },
     experimental: {
@@ -37,10 +36,6 @@ after(async () => {
   }
 });
 
-function uniqueEmail(label) {
-  return `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.com`;
-}
-
 function uniqueUsername() {
   return `user${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -54,111 +49,6 @@ async function api(url, { cookie, json, ...init } = {}) {
   }
   return fetch(baseUrl + url, { redirect: 'manual', ...init, headers });
 }
-
-function sidFromResponse(res) {
-  const setCookie = res.headers.get('set-cookie');
-  assert.ok(setCookie, 'expected Set-Cookie header');
-  const match = /(?:^|,\s*)sid=([^;]+)/.exec(setCookie);
-  assert.ok(match, `expected sid cookie in ${setCookie}`);
-  return `sid=${decodeURIComponent(match[1])}`;
-}
-
-async function loginViaEmail(email) {
-  const sendRes = await api('/auth/send', {
-    method: 'POST',
-    json: { email },
-  });
-  assert.equal(sendRes.status, 200);
-  const sendData = await sendRes.json();
-  assert.ok(sendData.dev_link, 'expected dev login link in test mode');
-
-  const devLink = new URL(sendData.dev_link);
-  const verifyRes = await fetch(baseUrl + devLink.pathname + devLink.search, { redirect: 'manual' });
-  assert.ok([301, 302].includes(verifyRes.status), `unexpected verify status ${verifyRes.status}`);
-  return sidFromResponse(verifyRes);
-}
-
-async function authMe(cookie) {
-  const res = await api('/auth/me', { cookie });
-  assert.equal(res.status, 200);
-  return res.json();
-}
-
-async function completeEmailChange(cookie, email) {
-  const sendRes = await api('/auth/email/send', {
-    method: 'POST',
-    cookie,
-    json: { email },
-  });
-  assert.equal(sendRes.status, 200);
-  const sendData = await sendRes.json();
-  assert.ok(sendData.dev_link, 'expected dev verification link in test mode');
-
-  const devLink = new URL(sendData.dev_link);
-  const verifyRes = await fetch(baseUrl + devLink.pathname + devLink.search, { redirect: 'manual' });
-  assert.ok([301, 302].includes(verifyRes.status), `unexpected verify status ${verifyRes.status}`);
-}
-
-test('profile saves preserve linked email and rotating email revokes the old account alias', async () => {
-  const oldEmail = uniqueEmail('old');
-  const newEmail = uniqueEmail('new');
-  const cookie = await loginViaEmail(oldEmail);
-
-  const initial = await authMe(cookie);
-  const renamed = uniqueUsername();
-
-  const saveRes = await api('/auth/profile', {
-    method: 'POST',
-    cookie,
-    json: {
-      username: renamed,
-      color: initial.color,
-    },
-  });
-  assert.equal(saveRes.status, 200);
-
-  const afterSave = await authMe(cookie);
-  assert.equal(afterSave.email, oldEmail);
-  assert.equal(afterSave.username, renamed);
-
-  await completeEmailChange(cookie, newEmail);
-
-  const afterChange = await authMe(cookie);
-  assert.equal(afterChange.email, newEmail);
-  assert.equal(afterChange.username, renamed);
-
-  const currentEmailCookie = await loginViaEmail(newEmail);
-  const currentEmailAccount = await authMe(currentEmailCookie);
-  assert.equal(currentEmailAccount.username, renamed);
-  assert.equal(currentEmailAccount.created_at, initial.created_at);
-
-  const oldEmailCookie = await loginViaEmail(oldEmail);
-  const oldEmailAccount = await authMe(oldEmailCookie);
-  assert.notEqual(oldEmailAccount.username, renamed);
-  assert.notEqual(oldEmailAccount.created_at, initial.created_at);
-});
-
-test('account deletion removes active email aliases instead of resurrecting the deleted account', async () => {
-  const oldEmail = uniqueEmail('delete-old');
-  const newEmail = uniqueEmail('delete-new');
-  const cookie = await loginViaEmail(oldEmail);
-
-  const initial = await authMe(cookie);
-  await completeEmailChange(cookie, newEmail);
-  const current = await authMe(cookie);
-  assert.equal(current.email, newEmail);
-
-  const deleteRes = await api('/auth/delete', {
-    method: 'POST',
-    cookie,
-  });
-  assert.equal(deleteRes.status, 200);
-
-  const recreatedCookie = await loginViaEmail(newEmail);
-  const recreated = await authMe(recreatedCookie);
-  assert.equal(recreated.email, newEmail);
-  assert.notEqual(recreated.created_at, initial.created_at);
-});
 
 test('passkey start flows require local user verification', async () => {
   const regRes = await api('/auth/webauthn/register/start', {
@@ -175,4 +65,45 @@ test('passkey start flows require local user verification', async () => {
   assert.equal(authRes.status, 200);
   const authData = await authRes.json();
   assert.equal(authData.options.userVerification, 'required');
+});
+
+test('QR pairing mints a token, SVG, and rejects status claims without a session', async () => {
+  const startRes = await api('/auth/qr/start', { method: 'POST' });
+  assert.equal(startRes.status, 200);
+  const startData = await startRes.json();
+  assert.ok(startData.token && typeof startData.token === 'string', 'expected token string');
+  assert.ok(/^<svg/.test(startData.qrSvg), 'expected SVG QR markup');
+  assert.ok(startData.url.includes('/p?t=' + startData.token), 'expected pair URL with token');
+  assert.equal(typeof startData.expiresInSec, 'number');
+
+  const statusRes = await api('/auth/qr/status?t=' + encodeURIComponent(startData.token));
+  assert.equal(statusRes.status, 200);
+  const statusData = await statusRes.json();
+  assert.equal(statusData.status, 'pending');
+
+  const expiredRes = await api('/auth/qr/status?t=' + encodeURIComponent('bogus'));
+  const expiredData = await expiredRes.json();
+  assert.equal(expiredData.status, 'expired');
+
+  const claimRes = await api('/auth/qr/claim', {
+    method: 'POST',
+    json: { token: startData.token },
+  });
+  assert.equal(claimRes.status, 401, 'claim without session must 401');
+});
+
+test('the /p pairing page renders with the expected CSP', async () => {
+  const res = await api('/p?t=' + encodeURIComponent('any'));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') || '', /text\/html/);
+  const csp = res.headers.get('content-security-policy') || '';
+  assert.ok(csp.includes("frame-ancestors 'none'"), 'CSP must deny framing');
+  assert.ok(csp.includes("default-src 'self'"), 'CSP must default to self');
+});
+
+test('removed email endpoints return 404', async () => {
+  for (const url of ['/auth/send', '/auth/verify', '/auth/verify-code', '/auth/email/send', '/auth/email/verify', '/auth/email/remove']) {
+    const res = await api(url, { method: url.endsWith('/verify') ? 'GET' : 'POST' });
+    assert.equal(res.status, 404, `${url} must be removed`);
+  }
 });

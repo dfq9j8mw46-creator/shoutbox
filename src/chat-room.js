@@ -245,7 +245,7 @@ export class ChatRoom {
       // Dedup tabs of the same user by fingerprint. Fall back to the
       // socket object itself so unauthenticated/legacy connections stay
       // distinct instead of collapsing to a single "anon" row. The
-      // fingerprint stays server-side only — it's NOT included in the
+      // fingerprint stays server-side only, it's NOT included in the
       // broadcast payload, so peers can't correlate one user across
       // username changes.
       const key = a.fingerprint || ws;
@@ -262,7 +262,7 @@ export class ChatRoom {
 
 // Shallow copy of a stored message with the fingerprint field removed.
 // We keep the fingerprint in DO storage because the self-delete flow
-// filters messages by it, but peers never see it — otherwise a stable
+// filters messages by it, but peers never see it, otherwise a stable
 // 24-bit HMAC would let the whole room correlate a user across every
 // username change they ever make.
 function stripFingerprint(msg) {

@@ -1,5 +1,6 @@
 import { ChatRoom } from './chat-room.js';
 import { HTML } from './html.js';
+import { PAIR_HTML } from './pair-html.js';
 import VERSION from './version.json';
 import {
   generateRegistrationOptions,
@@ -7,6 +8,7 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from '@simplewebauthn/server';
+import qrcode from 'qrcode-generator';
 
 export { ChatRoom };
 
@@ -42,17 +44,6 @@ function isSecureRequest(request, env) {
   if (env.BASE_URL && env.BASE_URL.startsWith('https://')) return true;
   const proto = request.headers.get('X-Forwarded-Proto') || new URL(request.url).protocol;
   return proto === 'https:' || proto === 'https';
-}
-
-// Gate for returning magic codes/links directly in HTTP responses.
-// Only active when EMAIL_API_KEY is unset AND the request is from a dev host
-// (localhost) or DEV_MODE is explicitly set. This prevents a production deploy
-// with no email provider from becoming an open auth bypass.
-function isDev(request, env) {
-  const devMode = (env.DEV_MODE || '').trim().toLowerCase();
-  if (devMode && devMode !== 'false' && devMode !== '0' && devMode !== 'no') return true;
-  const host = (request.headers.get('Host') || '').toLowerCase().split(':')[0];
-  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
 }
 
 const SESSION_TTL = 60 * 60 * 24 * 7;
@@ -218,18 +209,27 @@ async function hashIpForRateLimit(ip, secret) {
   return h.slice(0, 16);
 }
 
-function authMode(ua) {
-  if (!ua) return 'link';
-  if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return 'code';
-  if (/Macintosh|Mac OS X/i.test(ua)) return 'code';
-  return 'link';
+// Detect Windows desktop browsers. Passkey UX on Windows is rough enough
+// that we route those users through a phone-pair flow by default; everyone
+// else (mobile + Mac/Linux desktop) gets the direct passkey path.
+function isWindowsDesktop(ua) {
+  if (!ua) return false;
+  if (/Mobile|Android|iPhone|iPad|iPod/i.test(ua)) return false;
+  return /Windows/i.test(ua);
 }
 
-function generateCode() {
-  const buf = new Uint8Array(4);
-  crypto.getRandomValues(buf);
-  const n = ((buf[0] << 24 >>> 0) + (buf[1] << 16) + (buf[2] << 8) + buf[3]) % 1000000;
-  return n.toString().padStart(6, '0');
+const QR_TTL = 300;
+
+function renderPairQrSvg(text) {
+  // typeNumber=0 lets the lib pick the smallest type that fits the URL.
+  // 'M' error-correction (~15%) is the sweet spot for phone cameras vs.
+  // glare/angle without inflating the module count.
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  // cellSize=8, margin=16 → crisp at roughly 256-320px. scalable=true
+  // drops the fixed width/height so CSS sizing takes over.
+  return qr.createSvgTag({ cellSize: 8, margin: 16, scalable: true });
 }
 
 async function createSession(env, email, secret) {
@@ -272,24 +272,17 @@ async function reserveUsername(env, base, email) {
 // emailIndex:alice@example.com" attack: without SECRET you can't map a
 // known email to its key, and you can't reverse a hashed key to an email.
 // The email still lives in the VALUE of emailIndex entries so the scan
-// still works for listOwnedEmails — but it's not patterned, so an
+// still works for listOwnedEmails, but it's not patterned, so an
 // attacker can't find a specific user's entry without scanning every
 // emailIndex record.
 //
 // Lazy migration: wherever we'd formerly read emailIndex:<email>, we now
-// read the hashed key, fall back to the legacy plaintext key, and — on a
-// hit — rewrite to the hashed form and delete the plaintext entry. So
+// read the hashed key, fall back to the legacy plaintext key, and on a
+// hit, rewrite to the hashed form and delete the plaintext entry. So
 // old data gets cleaned up the first time each email is looked up after
 // deploy, with zero downtime.
 async function hashEmailKey(secret, email) {
   return (await hmac(secret, 'email:' + email.toLowerCase())).slice(0, 32);
-}
-
-// Store magic-link tokens under HMAC(token) instead of the token itself so a
-// KV dump during the 10-minute TTL window can't map a token to an email —
-// matches the treatment we already give the 6-digit code path.
-async function hashKvToken(secret, kind, token) {
-  return (await hmac(secret, kind + ':' + token)).slice(0, 32);
 }
 
 function parseEmailIndexValue(raw) {
@@ -494,7 +487,7 @@ async function migrateLegacyOwnerId(env, secret, ownerId, profile, keepEmails = 
 // email) to a synthetic UUID. Previously this only fired when the email
 // had *changed*; running unconditionally pulls plaintext email out of
 // every KV key suffix (profile:, usessions:, userCreds:, recovery:,
-// credentials) for legacy accounts on their next login. Idempotent —
+// credentials) for legacy accounts on their next login. Idempotent:
 // synthetic ownerIds short-circuit immediately.
 async function maybeMigrateChangedLegacyOwnerId(env, secret, ownerId) {
   if (!ownerId || isSyntheticOwnerId(ownerId)) return ownerId;
@@ -544,26 +537,6 @@ async function loadOrCreateProfile(env, ownerId, secret) {
   if (isEmailOwner) profile.email = ownerId;
   await env.KV.put(key, JSON.stringify(profile));
   return profile;
-}
-
-// Resolve a login email to the account ownerId. Legacy accounts (ownerId ==
-// email, no emailIndex yet) are backfilled on first lookup so the index
-// becomes authoritative going forward.
-async function resolveOwnerIdForEmail(env, secret, email) {
-  const existing = await getOwnerByEmail(env, secret, email);
-  if (existing) return existing;
-  const legacyRaw = await env.KV.get(`profile:${email}`);
-  if (legacyRaw) {
-    const legacyProfile = JSON.parse(legacyRaw);
-    const currentEmail = (legacyProfile.email || '').trim().toLowerCase();
-    if (!currentEmail || currentEmail === email) {
-      await putEmailIndex(env, secret, email, email);
-      return email;
-    }
-    await migrateLegacyOwnerId(env, secret, email, legacyProfile, [currentEmail]);
-  }
-  await putEmailIndex(env, secret, email, email);
-  return email;
 }
 
 async function saveSession(env, sid, session) {
@@ -802,114 +775,6 @@ async function handleRequest(request, env) {
     const secret = env.SECRET;
     const secure = isSecureRequest(request, env);
 
-    // ---- Auth routes -------------------------------------------------------
-    if (url.pathname === '/auth/send' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));
-      const email = (body.email || '').trim().toLowerCase();
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return json({ error: 'Invalid email' }, 400);
-      }
-
-      // Per-IP limit prevents one attacker rotating through many addresses
-      // to burn the email provider's quota.
-      const sendIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
-      const ipRl = await rateLimit(env, `send_ip_rl:${sendIpHash}`, 20, 60 * 60);
-      if (!ipRl.ok) return json({ error: 'Too many requests' }, 429);
-
-      // Prevent mailbombing a target: 5 sends per hour per email address.
-      const emailKeyHash = await hashEmailKey(secret, email);
-      const rl = await rateLimit(env, `send_rate:${emailKeyHash}`, 5, 60 * 60);
-      if (!rl.ok) {
-        return json({ error: `Too many requests - try again in ${Math.ceil(rl.retryAfterSec / 60)} min` }, 429);
-      }
-
-      // Without an email provider, the only way to deliver a code is to return
-      // it in the HTTP response. Refuse that path outside dev so a misconfigured
-      // production deploy doesn't hand out magic links to anyone who asks.
-      if (!env.EMAIL_API_KEY && !isDev(request, env)) {
-        return json({ error: 'Email service not configured' }, 500);
-      }
-
-      const mode = authMode(request.headers.get('User-Agent') || '');
-
-      if (mode === 'code') {
-        const code = generateCode();
-        // Never store the plaintext code. Hash it with the worker
-        // secret so a KV dump during the 10m TTL window doesn't reveal
-        // live codes to anyone without SECRET. The key is also keyed by
-        // hashed email so the mapping (email → pending code) isn't
-        // visible by pattern-matching KV keys.
-        const codeHash = await hmac(secret, 'code:' + code);
-        await env.KV.put(
-          `magic:code:${emailKeyHash}`,
-          JSON.stringify({ codeHash, attempts: 0 }),
-          { expirationTtl: 600 },
-        );
-
-        if (env.EMAIL_API_KEY) {
-          const emailRes = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${env.EMAIL_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              from: env.EMAIL_FROM || 'chat@example.com',
-              to: [email],
-              subject: `Your chat login code: ${code}`,
-              html: `<p>Your login code:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${code}</p><p>Expires in 10 minutes.</p>`,
-            }),
-          });
-          if (!emailRes.ok) {
-            // Avoid logging the response body — Resend sometimes echoes
-            // the recipient address in errors, which would surface as
-            // PII if Workers Logs were ever turned on.
-            console.error('Email API error: status', emailRes.status);
-            return json({ error: 'Failed to send email' }, 500);
-          }
-          return json({ ok: true, mode: 'code' });
-        }
-
-        // Dev mode: token is returned to the caller; don't log it so that
-        // re-enabling observability later doesn't leak auth secrets.
-        return json({ ok: true, mode: 'code', dev_code: code });
-      }
-
-      // Link mode
-      const token = crypto.randomUUID() + crypto.randomUUID();
-      const tokenHash = await hashKvToken(secret, 'magic', token);
-      await env.KV.put(`magic:${tokenHash}`, email, { expirationTtl: 600 });
-
-      const base = env.BASE_URL || url.origin;
-      const link = `${base}/auth/verify?token=${token}`;
-
-      if (env.EMAIL_API_KEY) {
-        const emailRes = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.EMAIL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: env.EMAIL_FROM || 'chat@example.com',
-            to: [email],
-            subject: 'Shoutbox login link',
-            html: `<p>Click to sign in:</p><p><a href="${link}">${link}</a></p><p>Expires in 10 minutes.</p>`,
-          }),
-        });
-        if (!emailRes.ok) {
-          // See comment above: status only, never the body.
-          console.error('Email API error: status', emailRes.status);
-          return json({ error: 'Failed to send email' }, 500);
-        }
-        return json({ ok: true, mode: 'link' });
-      }
-
-      // Dev mode: token is returned to the caller; don't log it so that
-      // re-enabling observability later doesn't leak auth secrets.
-      return json({ ok: true, mode: 'link', dev_link: link });
-    }
-
     // ---- Passkey (WebAuthn) ------------------------------------------------
     if (url.pathname === '/auth/webauthn/register/start' && request.method === 'POST') {
       const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
@@ -1055,7 +920,7 @@ async function handleRequest(request, env) {
 
     if (url.pathname === '/auth/webauthn/auth/start' && request.method === 'POST') {
       // 120 challenge creations per hour per client. Active development
-      // and back-and-forth testing burn challenges quickly — conditional
+      // and back-and-forth testing burn challenges quickly. Conditional
       // WebAuthn (one per page visit) plus every explicit Continue click
       // (one per attempt). The limit is generous for humans but still
       // bounds an attacker hammering the endpoint.
@@ -1252,343 +1117,25 @@ async function handleRequest(request, env) {
       return json({ ok: true, recoveryCodes: codes });
     }
 
-    if (url.pathname === '/auth/verify-code' && request.method === 'POST') {
-      // Per-IP limiter on top of the 5-attempts-per-code counter. Without
-      // it, an attacker rotating emails isn't bounded at the IP layer —
-      // they get 5 fresh guesses for every (email, 10m) pair.
-      const verifyIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
-      const verifyIpRl = await rateLimit(env, `verify_code_ip_rl:${verifyIpHash}`, 20, 60 * 60);
-      if (!verifyIpRl.ok) return json({ error: 'Too many attempts from this IP - try later' }, 429);
-
-      const body = await request.json().catch(() => ({}));
-      const email = (body.email || '').trim().toLowerCase();
-      const code = (body.code || '').trim();
-      if (!email || !/^\d{6}$/.test(code)) {
-        return json({ error: 'Invalid code' }, 400);
-      }
-      const emailKeyHash = await hashEmailKey(secret, email);
-      const key = `magic:code:${emailKeyHash}`;
-      const raw = await env.KV.get(key);
-      if (!raw) return json({ error: 'Code expired - request a new one' }, 400);
-      const record = JSON.parse(raw);
-      if (record.attempts >= 5) {
-        await env.KV.delete(key);
-        return json({ error: 'Too many attempts - request a new code' }, 429);
-      }
-      const expected = await hmac(secret, 'code:' + code);
-      if (record.codeHash !== expected) {
-        record.attempts += 1;
-        await env.KV.put(key, JSON.stringify(record), { expirationTtl: 600 });
-        return json({ error: 'Wrong code' }, 400);
-      }
-      await env.KV.delete(key);
-      const ownerId = await resolveOwnerIdForEmail(env, secret, email);
-      const sid = await createSession(env, ownerId, secret);
-      return json({ ok: true }, 200, { 'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }) });
-    }
-
-    if (url.pathname === '/auth/verify' && request.method === 'GET') {
-      // Per-IP limiter. The token is 32 random bytes so brute forcing
-      // it is infeasible on its own, but a loose GET endpoint is still
-      // a cheap way to churn KV lookups; bounding it keeps a malicious
-      // crawler from burning read capacity.
-      const verifyIpHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
-      const verifyIpRl = await rateLimit(env, `verify_link_ip_rl:${verifyIpHash}`, 30, 60 * 60);
-      if (!verifyIpRl.ok) return json({ error: 'Too many attempts from this IP - try later' }, 429);
-
-      const token = url.searchParams.get('token');
-      if (!token) return json({ error: 'Missing token' }, 400);
-
-      const tokenHash = await hashKvToken(secret, 'magic', token);
-      let email = await env.KV.get(`magic:${tokenHash}`);
-      if (email) {
-        await env.KV.delete(`magic:${tokenHash}`);
-      } else {
-        // Transitional fallback for any plaintext-keyed tokens still in
-        // flight from before we started hashing keys. Safe to drop 10
-        // minutes (the TTL) after deploy.
-        email = await env.KV.get(`magic:${token}`);
-        if (email) await env.KV.delete(`magic:${token}`);
-      }
-      if (!email) {
-        return new Response('Invalid or expired link. <a href="/">Try again</a>', {
-          status: 400,
-          headers: { 'Content-Type': 'text/html' },
-        });
-      }
-
-      const ownerId = await resolveOwnerIdForEmail(env, secret, email);
-      const sid = await createSession(env, ownerId, secret);
-
-      // Self-closing landing page instead of a 302 to /. The original tab
-      // (already polling /auth/me) will pick up the new session and switch
-      // to chat on its own; this tab tries to close itself so the user
-      // doesn't end up with two open chat tabs. window.close() is blocked
-      // for tabs the browser doesn't consider script-openable, so the
-      // page also offers a manual close button and a "Continue" link
-      // (the latter handles the single-tab case where there's no original
-      // tab waiting).
-      const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>Signed in</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0f0f0f;
-    color: #e0e0e0;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    padding: 16px;
-    text-align: center;
-  }
-  h1 { font-size: 18px; font-weight: 600; }
-  p { color: #777; font-size: 13px; max-width: 320px; line-height: 1.5; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  .btn {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #e0e0e0;
-    padding: 8px 18px;
-    font-size: 13px;
-    border-radius: 999px;
-    cursor: pointer;
-    text-decoration: none;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    transition: background-color 120ms ease, border-color 120ms ease;
-  }
-  .btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
-  .btn-primary {
-    background: rgba(91, 141, 239, 0.20);
-    border-color: rgba(91, 141, 239, 0.45);
-    color: #fff;
-  }
-  .btn-primary:hover { background: rgba(91, 141, 239, 0.30); border-color: rgba(91, 141, 239, 0.65); }
-</style>
-</head>
-<body>
-  <h1>Signed in</h1>
-  <p>You can close this tab. Your other Shoutbox tab will pick up the session.</p>
-  <div class="actions">
-    <button class="btn" id="close-btn" type="button">Close tab</button>
-    <a class="btn btn-primary" href="/">Continue to Shoutbox</a>
-  </div>
-<script>
-  (function () {
-    var closeBtn = document.getElementById('close-btn');
-    var tryClose = function () { try { window.close(); } catch (e) {} };
-    // Best-effort auto-close shortly after landing. Browsers block
-    // window.close() for tabs they didn't open via script, so this is
-    // silent if it fails; the manual button and Continue link cover
-    // the rest.
-    setTimeout(tryClose, 600);
-    closeBtn.addEventListener('click', tryClose);
-  })();
-</script>
-</body>
-</html>`;
-      return new Response(html, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Set-Cookie': setCookie('sid', sid, SESSION_TTL, { secure }),
-        },
-      });
-    }
-
     if (url.pathname === '/auth/me' && request.method === 'GET') {
       const sid = getCookie(request, 'sid');
       if (!sid) return json({ error: 'Not signed in' }, 401);
       const session = await loadSession(env, secret, sid);
       if (!session) return json({ error: 'Not signed in' }, 401);
-      // Profile (for email/created_at) and credential list are independent KV
-      // reads — fan them out so the boot-path /auth/me call doesn't serialize
+      // Profile (for created_at) and credential list are independent KV
+      // reads. Fan them out so the boot-path /auth/me call doesn't serialize
       // two round-trips.
       const [profile, credIds] = await Promise.all([
         loadOrCreateProfile(env, session.email, secret),
         listCredentialIds(env, session.email),
       ]);
-      const passkeyCount = credIds.length;
-      const email = profile.email || null;
       return json({
         username: session.username,
         color: session.color,
         fingerprint: session.fingerprint,
-        passkeyCount,
-        hasEmail: !!email,
-        email,
+        passkeyCount: credIds.length,
         created_at: profile.created_at || null,
       });
-    }
-
-    if (url.pathname === '/auth/email/send' && request.method === 'POST') {
-      const sid = getCookie(request, 'sid');
-      if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, secret, sid);
-      if (!session) return json({ error: 'Not signed in' }, 401);
-      const ownerId = session.email;
-
-      const body = await request.json().catch(() => ({}));
-      const newEmail = (body.email || '').trim().toLowerCase();
-      if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
-        return json({ error: 'Invalid email' }, 400);
-      }
-
-      // Per-IP, per-account, and per-target-address rate limits.
-      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
-      const ipRl = await rateLimit(env, `email_chg_ip_rl:${ipHash}`, 20, 60 * 60);
-      if (!ipRl.ok) return json({ error: 'Too many requests' }, 429);
-      const ownerRl = await rateLimit(env, `email_chg_rl:${ownerId}`, 5, 60 * 60);
-      if (!ownerRl.ok) return json({ error: 'Too many requests' }, 429);
-      const newEmailKeyHash = await hashEmailKey(secret, newEmail);
-      const targetRl = await rateLimit(env, `email_chg_target:${newEmailKeyHash}`, 5, 60 * 60);
-      if (!targetRl.ok) return json({ error: 'Too many requests' }, 429);
-
-      // Conflict checks: email must not be claimed by a different account.
-      const existingOwner = await getOwnerByEmail(env, secret, newEmail);
-      if (existingOwner && existingOwner !== ownerId) {
-        return json({ error: 'Email already in use' }, 409);
-      }
-      if (existingOwner === ownerId) {
-        return json({ error: 'That is already your email' }, 400);
-      }
-      // Legacy accounts may not have an emailIndex entry yet but still own
-      // profile:<email>; refuse to stomp on them.
-      if (newEmail !== ownerId && (await env.KV.get(`profile:${newEmail}`))) {
-        return json({ error: 'Email already in use' }, 409);
-      }
-
-      if (!env.EMAIL_API_KEY && !isDev(request, env)) {
-        return json({ error: 'Email service not configured' }, 500);
-      }
-
-      const token = crypto.randomUUID() + crypto.randomUUID();
-      const tokenHash = await hashKvToken(secret, 'emailChange', token);
-      await env.KV.put(
-        `emailChange:${tokenHash}`,
-        JSON.stringify({ ownerId, email: newEmail }),
-        { expirationTtl: 600 },
-      );
-
-      const base = env.BASE_URL || url.origin;
-      const link = `${base}/auth/email/verify?token=${token}`;
-
-      if (env.EMAIL_API_KEY) {
-        const emailRes = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.EMAIL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: env.EMAIL_FROM || 'chat@example.com',
-            to: [newEmail],
-            subject: 'Confirm your new chat email',
-            html: `<p>Click to link this address to your chat account:</p><p><a href="${link}">${link}</a></p><p>Expires in 10 minutes. If you didn't request this, ignore this message.</p>`,
-          }),
-        });
-        if (!emailRes.ok) {
-          // See comment above: status only, never the body.
-          console.error('Email API error: status', emailRes.status);
-          return json({ error: 'Failed to send email' }, 500);
-        }
-        return json({ ok: true });
-      }
-
-      return json({ ok: true, dev_link: link });
-    }
-
-    if (url.pathname === '/auth/email/verify' && request.method === 'GET') {
-      const token = url.searchParams.get('token');
-      if (!token) return json({ error: 'Missing token' }, 400);
-
-      const tokenHash = await hashKvToken(secret, 'emailChange', token);
-      let raw = await env.KV.get(`emailChange:${tokenHash}`);
-      if (raw) {
-        await env.KV.delete(`emailChange:${tokenHash}`);
-      } else {
-        // Transitional fallback for plaintext-keyed tokens issued before
-        // we switched to hashed keys. Safe to drop 10 minutes after deploy.
-        raw = await env.KV.get(`emailChange:${token}`);
-        if (raw) await env.KV.delete(`emailChange:${token}`);
-      }
-      if (!raw) {
-        return new Response('Invalid or expired link. <a href="/">Return to chat</a>', {
-          status: 400,
-          headers: { 'Content-Type': 'text/html' },
-        });
-      }
-      const { ownerId, email: newEmail } = JSON.parse(raw);
-
-      const profileRaw = await env.KV.get(`profile:${ownerId}`);
-      if (!profileRaw) {
-        return new Response('Account not found. <a href="/">Return</a>', {
-          status: 404, headers: { 'Content-Type': 'text/html' },
-        });
-      }
-      const profile = JSON.parse(profileRaw);
-
-      let ownerIdForWrite = ownerId;
-      if (!isSyntheticOwnerId(ownerId) && newEmail !== ownerId) {
-        ownerIdForWrite = await migrateLegacyOwnerId(env, secret, ownerId, profile, [newEmail]);
-      }
-
-      // Re-check conflict: the token could have been issued before someone
-      // else claimed the same address.
-      const existingOwner = await getOwnerByEmail(env, secret, newEmail);
-      if (existingOwner && existingOwner !== ownerIdForWrite) {
-        return new Response('That email is now in use. <a href="/">Return</a>', {
-          status: 409, headers: { 'Content-Type': 'text/html' },
-        });
-      }
-
-      profile.email = newEmail;
-      await env.KV.put(`profile:${ownerIdForWrite}`, JSON.stringify(profile));
-      await rewriteOwnedEmailIndexes(env, secret, ownerIdForWrite, [newEmail]);
-
-      return new Response(null, {
-        status: 302,
-        headers: { Location: '/?email_updated=1' },
-      });
-    }
-
-    if (url.pathname === '/auth/email/remove' && request.method === 'POST') {
-      const sid = getCookie(request, 'sid');
-      if (!sid) return json({ error: 'Not signed in' }, 401);
-      const session = await loadSession(env, secret, sid);
-      if (!session) return json({ error: 'Not signed in' }, 401);
-      const ownerId = session.email;
-
-      // Require at least one passkey so the user retains a way to sign in.
-      const credIds = await listCredentialIds(env, ownerId);
-      if (credIds.length === 0) {
-        return json({ error: 'Add a passkey before removing your email so you can still sign in.' }, 400);
-      }
-
-      const profileRaw = await env.KV.get(`profile:${ownerId}`);
-      if (!profileRaw) return json({ error: 'Not found' }, 404);
-      const profile = JSON.parse(profileRaw);
-      if (!profile.email) return json({ error: 'No email to remove' }, 400);
-
-      let ownerIdForWrite = ownerId;
-      if (!isSyntheticOwnerId(ownerId)) {
-        ownerIdForWrite = await migrateLegacyOwnerId(env, secret, ownerId, profile, []);
-      }
-
-      delete profile.email;
-      await env.KV.put(`profile:${ownerIdForWrite}`, JSON.stringify(profile));
-      await rewriteOwnedEmailIndexes(env, secret, ownerIdForWrite, []);
-
-      return json({ ok: true });
     }
 
     if (url.pathname.startsWith('/user/') && request.method === 'GET') {
@@ -1695,6 +1242,109 @@ async function handleRequest(request, env) {
         username: nextProfile.username,
         color: nextProfile.color,
         fingerprint: nextProfile.fingerprint,
+      });
+    }
+
+    // ---- QR cross-device pairing ------------------------------------------
+    //
+    // Windows desktop: passkey UX is rough on Windows, so we route those
+    // users through the phone instead. Desktop calls /auth/qr/start, gets
+    // a single-use token + an inline SVG QR for /p?t=TOKEN, and polls
+    // /auth/qr/status. The phone scans the QR, lands on /p, signs in (or
+    // signs up) with a passkey, and POSTs /auth/qr/claim to bind the token
+    // to that account. The desktop's next poll consumes the token, mints
+    // a fresh sid, and switches into chat.
+    if (url.pathname === '/auth/qr/start' && request.method === 'POST') {
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const rl = await rateLimit(env, `qr_start_rl:${ipHash}`, 30, 60 * 60);
+      if (!rl.ok) return json({ error: 'Too many requests' }, 429);
+
+      const token = crypto.randomUUID() + crypto.randomUUID();
+      const tokenHash = (await hmac(secret, 'pair:' + token)).slice(0, 32);
+      await env.KV.put(
+        `pair:${tokenHash}`,
+        JSON.stringify({ status: 'pending', createdAt: Date.now() }),
+        { expirationTtl: QR_TTL },
+      );
+      const base = env.BASE_URL || url.origin;
+      const link = `${base}/p?t=${token}`;
+      return json({ token, url: link, qrSvg: renderPairQrSvg(link), expiresInSec: QR_TTL });
+    }
+
+    if (url.pathname === '/auth/qr/status' && request.method === 'GET') {
+      // Generous limit: desktop polls roughly once per second for up to
+      // 5 minutes per attempt, so a real user lands well below this.
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const rl = await rateLimit(env, `qr_status_rl:${ipHash}`, 600, 60 * 60);
+      if (!rl.ok) return json({ error: 'Too many requests' }, 429);
+
+      const token = url.searchParams.get('t');
+      if (!token) return json({ error: 'Missing token' }, 400);
+      const tokenHash = (await hmac(secret, 'pair:' + token)).slice(0, 32);
+      const raw = await env.KV.get(`pair:${tokenHash}`);
+      if (!raw) return json({ status: 'expired' });
+      const rec = JSON.parse(raw);
+      if (rec.status !== 'authed' || !rec.ownerId) return json({ status: 'pending' });
+      // Single-use: consume the record before minting the session so a
+      // replay can't issue a second sid against the same token.
+      await env.KV.delete(`pair:${tokenHash}`);
+      const newSid = await createSession(env, rec.ownerId, secret);
+      return json({ status: 'authed' }, 200, {
+        'Set-Cookie': setCookie('sid', newSid, SESSION_TTL, { secure }),
+      });
+    }
+
+    if (url.pathname === '/auth/qr/claim' && request.method === 'POST') {
+      // Mobile (already authed via passkey on this device) binds the token
+      // to its ownerId. The desktop's next status poll picks it up.
+      const sid = getCookie(request, 'sid');
+      if (!sid) return json({ error: 'Not signed in' }, 401);
+      const session = await loadSession(env, secret, sid);
+      if (!session) return json({ error: 'Not signed in' }, 401);
+
+      const ipHash = await hashIpForRateLimit(request.headers.get('CF-Connecting-IP') || '', secret);
+      const rl = await rateLimit(env, `qr_claim_rl:${ipHash}`, 30, 60 * 60);
+      if (!rl.ok) return json({ error: 'Too many requests' }, 429);
+
+      const body = await request.json().catch(() => ({}));
+      const token = (body.token || '').trim();
+      if (!token) return json({ error: 'Missing token' }, 400);
+      const tokenHash = (await hmac(secret, 'pair:' + token)).slice(0, 32);
+      const raw = await env.KV.get(`pair:${tokenHash}`);
+      if (!raw) return json({ error: 'Pairing expired' }, 410);
+      const rec = JSON.parse(raw);
+      if (rec.status === 'authed') return json({ error: 'Already used' }, 409);
+      rec.status = 'authed';
+      rec.ownerId = session.email;
+      // KV doesn't expose remaining TTL, so recompute from createdAt instead
+      // of letting a fresh put() silently extend the original 5-minute window.
+      const remaining = Math.max(
+        30,
+        QR_TTL - Math.floor((Date.now() - (rec.createdAt || Date.now())) / 1000),
+      );
+      await env.KV.put(`pair:${tokenHash}`, JSON.stringify(rec), { expirationTtl: remaining });
+      return json({ ok: true });
+    }
+
+    if (url.pathname === '/p' && request.method === 'GET') {
+      return new Response(PAIR_HTML, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data:",
+            "connect-src 'self'",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+          ].join('; '),
+          'X-Frame-Options': 'DENY',
+          'X-Content-Type-Options': 'nosniff',
+          'Referrer-Policy': 'no-referrer',
+          'Cache-Control': 'no-store',
+        },
       });
     }
 

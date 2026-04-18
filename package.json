@@ -12,6 +12,7 @@
     "wrangler": "^4.83.0"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.3.0"
+    "@simplewebauthn/server": "^13.3.0",
+    "qrcode-generator": "^2.0.4"
   }
 }

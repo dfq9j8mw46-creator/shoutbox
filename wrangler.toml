@@ -24,12 +24,11 @@ head_sampling_rate = 0
 pattern = "sb.rooty.org"
 custom_domain = true
 
-# KV namespace for sessions and magic tokens
+# KV namespace for sessions, passkey credentials, and QR pairing tokens
 [[kv_namespaces]]
 binding = "KV"
 id = "64646894967d4cfc8c9df02392a35cc7"
 
-# Set these secrets with: wrangler secret put <NAME>
-# SECRET           - HMAC signing key
-# EMAIL_API_KEY    - API key for your email provider (e.g. Resend)
-# EMAIL_FROM       - Sender address (e.g. chat@yourdomain.com)
+# Set this secret with: wrangler secret put SECRET
+# SECRET - HMAC signing key (used for session fingerprints, KV key hashing,
+#          rate-limit IP hashing, and QR pairing token hashing)

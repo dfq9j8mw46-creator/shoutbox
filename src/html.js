@@ -92,7 +92,7 @@ export const HTML = `<!DOCTYPE html>
      page) with pointer-events:none on the frame; interactive children
      re-enable them. overflow:hidden here (rather than on #users-list)
      sits flush with the page top, so the 8px breathing room above the
-     pills is part of the animation path — arriving pills slide from
+     pills is part of the animation path, arriving pills slide from
      y=0 down through the gap to their resting position at y=8. The
      :has() override drops the clip when the shade is open so the
      expanded list isn't cut off. */
@@ -137,7 +137,7 @@ export const HTML = `<!DOCTYPE html>
   }
   /* Expanded "shade": the list pops out of the flex row and anchors to
      the top of #users-bar, overlaying the messages area so every user
-     is visible. No backdrop — the pills float directly over the chat. */
+     is visible. No backdrop, the pills float directly over the chat. */
   #users-list.expanded {
     position: absolute;
     top: 0;
@@ -149,7 +149,7 @@ export const HTML = `<!DOCTYPE html>
     z-index: 20;
   }
   /* Each user name is rendered as a glass pill that matches the input
-     bar below — same translucent wash, same border, same backdrop
+     bar below, same translucent wash, same border, same backdrop
      blur. Messages that scroll behind the pill stay readable but
      softened, tying the top and bottom bars together visually.
      Hovering the pill brightens the wash and border the same way the
@@ -177,8 +177,8 @@ export const HTML = `<!DOCTYPE html>
     border-color: rgba(255, 255, 255, 0.22);
     background: rgba(255, 255, 255, 0.08);
   }
-  /* Suppress the default clickable-name underline inside a pill —
-     the pill's hover highlight signals interactivity instead. The
+  /* Suppress the default clickable-name underline inside a pill.
+     The pill's hover highlight signals interactivity instead. The
      li itself carries the clickable-name class now (so the whole pill
      is the click target), so we have to cover both it and any nested
      .clickable-name spans. */
@@ -197,12 +197,12 @@ export const HTML = `<!DOCTYPE html>
     padding-right: 0;
   }
   /* Fingerprint sits next to the name in the dropdown/modal contexts; in
-     the compact horizontal strip it's noise — let the click-to-open user
+     the compact horizontal strip it's noise, let the click-to-open user
      modal surface it instead. */
   #users-list .fp { display: none; }
 
   /* "+N more" pill. Absolutely pinned to the right edge so the users
-     row stays visually centered — otherwise its width would shift the
+     row stays visually centered, otherwise its width would shift the
      list off-center. Same glass surface as the user pills. */
   #users-more {
     position: absolute;
@@ -266,11 +266,11 @@ export const HTML = `<!DOCTYPE html>
        the last message rests with the same breathing room above the
        input pill as it would have above another message. The entry
        animation pins the new message's bottom at this resting line, so
-       it visibly rises out of that 2px gap — adjust this padding and
+       it visibly rises out of that 2px gap, adjust this padding and
        the animation's starting point follows automatically. No top
        padding: messages scroll behind the floating users pills so their
        backdrop-filter blur softens whatever text is currently
-       underneath — the scrollbar on #messages therefore runs from the
+       underneath, the scrollbar on #messages therefore runs from the
        top of the page all the way down to the input pill. */
     padding: 8px 12px 48px 4px;
     display: flex;
@@ -295,7 +295,7 @@ export const HTML = `<!DOCTYPE html>
      populated for the first message of each group sharing a relative-
      time bucket (see refreshTimestamps), so a run of five messages at
      "15h ago" shows the label once at the top of the run and blank
-     cells below — forming a left-column timeline. */
+     cells below, forming a left-column timeline. */
   .msg {
     font-size: 13px;
     line-height: 1.45;
@@ -458,11 +458,10 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-screen h2 { font-size: 13px; font-weight: 600; }
   #auth-screen p { color: var(--text-muted); font-size: 13px; max-width: 300px; text-align: center; }
-  /* Wrapper around the per-state form area (primary buttons, email pill,
-     code/signup/recovery forms). A fixed min-height absorbs the height
+  /* Wrapper around the per-state form area (primary buttons, QR card,
+     signup/recovery forms). A fixed min-height absorbs the height
      differences between states so the heading above and alts below
-     don't shift when the user toggles between passkey and email. The
-     visible content centers within the reserved space. */
+     don't shift when the user toggles between flows. */
   #auth-stack {
     display: flex;
     flex-direction: column;
@@ -471,11 +470,6 @@ export const HTML = `<!DOCTYPE html>
     gap: 16px;
     width: 100%;
   }
-  /* Form area reserves the height of the tallest form (two-input
-     recovery) so the icon-circle below it lives at the same y across
-     every state — the back button on non-primary screens lands in the
-     same spot the email circle occupies on primary. The visible form
-     is centered within the reserved space. */
   #auth-form-area {
     display: flex;
     flex-direction: column;
@@ -488,6 +482,28 @@ export const HTML = `<!DOCTYPE html>
     #auth-form-area { min-height: 100px; }
   }
   #auth-primary { display: flex; gap: 8px; }
+  /* QR card: black-on-white code lives inside a soft rounded white tile
+     so dark-theme scanners don't choke on inverted contrast. The hint
+     text wraps under the code at the same width. */
+  #auth-qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 320px;
+  }
+  #qr-heading { font-size: 14px; color: var(--text); font-weight: 600; }
+  #qr-card {
+    background: #fff;
+    padding: 14px;
+    border-radius: 14px;
+    line-height: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  }
+  #qr-svg-host { width: 220px; height: 220px; }
+  #qr-svg-host svg { width: 100%; height: 100%; display: block; }
+  #qr-hint { font-size: 13px; color: var(--text-muted); text-align: center; line-height: 1.5; }
+  #qr-card.expired { opacity: 0.35; filter: grayscale(1); }
   /* Glass button treatment matches the chat-input pill (#input-wrap):
      translucent surface, soft border, fully rounded, with backdrop blur.
      Scoped to #auth-screen so the chat profile modal's solid-pill
@@ -519,43 +535,13 @@ export const HTML = `<!DOCTYPE html>
     background: rgba(91, 141, 239, 0.30);
     border-color: rgba(91, 141, 239, 0.65);
   }
-  /* Email entry as a glass circle to opt into the email flow. Same
-     translucent surface, soft border, and backdrop blur as the input
-     pills so it reads as part of the same theme; circular shape signals
-     it's an alternative action, not a primary form. */
-  #use-email-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    color: var(--text-muted);
-    padding: 0;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 0;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-  }
-  #use-email-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.22);
-    color: var(--text);
-  }
-  #use-email-btn svg { display: block; }
-  /* Alts row reserves a single-line slot so toggling the "Use recovery
-     code" link in or out doesn't shift the heading above. */
-  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 18px; }
+  /* Alts row reserves a single-line slot so toggling fallback links in
+     or out doesn't shift the heading above. */
+  #auth-alts { font-size: 13px; color: var(--text-muted); display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; min-height: 18px; }
   #auth-alts a { color: var(--accent); text-decoration: none; }
   #auth-alts a:hover { text-decoration: underline; }
-  /* Back button shares the same 44px glass-circle treatment as
-     #use-email-btn so they read as the same kind of secondary action,
-     just for different intents (alternate entry vs return). They sit
-     in the same flex slot inside auth-stack — only one is ever
-     visible at a time. */
+  /* Back button: 44px glass-circle, same treatment used elsewhere on the
+     auth screen for secondary actions. */
   #auth-back {
     width: 44px;
     height: 44px;
@@ -661,66 +647,36 @@ export const HTML = `<!DOCTYPE html>
   #rc-box .actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   /* --- Grouped sections in profile modal --------------------------------- */
-  #pk-section, #email-section, #account-section, #provenance-section {
+  #pk-section, #account-section, #provenance-section {
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     padding-top: 6px;
     display: flex; flex-direction: column; gap: 6px;
   }
   /* All section headings (and the modal's title) share the same uppercase
      muted-label treatment so the modal reads as a sequence of peers. */
-  #profile-heading, #pk-section h4, #email-section h4, #account-section h4 { font-size: 13px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  #profile-heading, #pk-section h4, #account-section h4 { font-size: 13px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
   .account-actions { display: flex; gap: 8px; justify-content: space-between; }
-  #email-current {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 13px;
-  }
-  #email-value { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #email-value:empty::before { content: 'None'; color: var(--text-muted); }
-  #email-actions { display: flex; gap: 4px; }
-  #email-form { display: flex; flex-direction: column; gap: 6px; }
-  #email-new-input {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--text);
-    padding: 8px 14px;
-    border-radius: 999px;
-    font-size: 13px;
-    outline: none;
-    transition: background-color 120ms ease, border-color 120ms ease;
-  }
-  #email-new-input:focus { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
-  .email-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
-  /* Let the message collapse to 0 height when empty so it doesn't pad
-     out the bottom of the Email section. */
-  #email-msg { font-size: 13px; color: var(--text-muted); }
-  #email-msg:empty { display: none; }
-  #email-msg.error { color: #ff6b6b; }
-  #email-msg.ok { color: #8fd18f; }
   .pk-row {
     display: flex; align-items: center; gap: 8px;
     font-size: 13px;
   }
   .pk-row .pk-id { flex: 1; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  #auth-form { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
   /* Stack the secondary forms vertically (input(s) on top, button below)
      so they read as a focused single-purpose prompt rather than a row of
-     controls. The Continue/Sign-in button sits centered beneath. */
-  #signup-form, #code-form, #recovery-form {
+     controls. The Sign-in button sits centered beneath. */
+  #signup-form, #recovery-form {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
     width: 100%;
   }
-  /* Glass pill inputs match the email pill aesthetic: translucent
-     surface, soft border, fully rounded, with backdrop blur. Focus
-     lifts both the wash and border slightly. min-height matches the
-     pill (38px) so standalone fields and pills sit at the same size.
-     Direct-child selector so inputs nested inside an .input-pill (e.g.
-     the recovery-code field) stay unstyled here and pick up the
-     .input-pill rules instead. */
-  #signup-form > input, #code-form > input, #recovery-form > input {
+  /* Glass pill inputs: translucent surface, soft border, fully rounded.
+     min-height matches .input-pill (38px) so standalone fields and pills
+     sit at the same size. Direct-child selector so inputs nested inside
+     an .input-pill (e.g. recovery-code) stay unstyled here. */
+  #signup-form > input, #recovery-form > input {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--text);
@@ -735,15 +691,14 @@ export const HTML = `<!DOCTYPE html>
     outline: none;
     transition: background-color 120ms ease, border-color 120ms ease;
   }
-  #signup-form > input:focus, #code-form > input:focus, #recovery-form > input:focus {
+  #signup-form > input:focus, #recovery-form > input:focus {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.22);
   }
-  #code-form input { letter-spacing: 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   /* Glass pill containing an input + submit arrow, mirroring the chat
-     #input-wrap + #send-btn pattern. Used by both the email entry and
-     the recovery-code entry; the arrow only appears once the user has
-     typed something (visibility toggled in JS). */
+     #input-wrap + #send-btn pattern. Used by the recovery-code entry;
+     the arrow only appears once the user has typed (visibility toggled
+     in JS). */
   .input-pill {
     position: relative;
     display: flex;
@@ -796,24 +751,20 @@ export const HTML = `<!DOCTYPE html>
   }
   #auth-screen .input-pill > button[type=submit]:hover { background: #4a7de0; }
   #auth-screen .input-pill > button[type=submit] > svg { display: block; }
-  /* Wrapper reserves enough vertical space for the worst-case status
-     (a 2-3 line success/error message) plus the resend row, so the
-     centered auth-screen above doesn't reflow when a message lands. */
+  /* Reserve height for the worst-case status line so the centered
+     auth-screen above doesn't reflow when a message lands. */
   #auth-meta {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    min-height: 84px;
+    min-height: 32px;
     width: 100%;
     max-width: 320px;
   }
   #auth-status { color: var(--text-muted); font-size: 13px; min-height: 18px; text-align: center; max-width: 320px; }
   #auth-status.error { color: #ff6b6b; }
-  #dev-link a { color: var(--accent); font-size: 13px; }
   @media (max-width: 640px) {
-    #auth-screen #auth-form input,
-    #auth-screen #code-form input,
     #auth-screen #signup-form input,
     #auth-screen #recovery-form input {
       width: 100%;
@@ -916,7 +867,7 @@ export const HTML = `<!DOCTYPE html>
   }
   #profile-box .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   #profile-box .actions .spacer { flex: 1; }
-  /* Glass buttons matching the login screen — translucent surface, soft
+  /* Glass buttons matching the login screen, translucent surface, soft
      border, fully rounded. Scoped to #profile-box so the chat input's
      send button (also .btn .btn-primary) keeps its solid accent fill. */
   #profile-box .btn {
@@ -1079,31 +1030,21 @@ export const HTML = `<!DOCTYPE html>
 
   <div id="auth-stack">
     <div id="auth-form-area">
+      <div id="auth-qr" style="display:none;">
+        <div id="qr-heading">Scan to sign in</div>
+        <div id="qr-card">
+          <div id="qr-svg-host"></div>
+        </div>
+        <div id="qr-hint">Open the camera on your phone and point it at the code</div>
+      </div>
+
       <div id="auth-primary" style="display:none;">
         <button class="btn btn-primary" id="pk-signin-btn">Use passkey</button>
       </div>
 
-      <form id="auth-form" style="display:none;">
-        <div id="email-pill" class="input-pill">
-          <input type="email" id="email-input" placeholder="Sign in with email" inputmode="email" required autocomplete="username webauthn">
-          <button type="submit" class="btn btn-primary" id="email-submit-btn" aria-label="Continue" style="visibility:hidden;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-          </button>
-        </div>
-      </form>
-
       <form id="signup-form" style="display:none;">
         <input type="text" id="signup-name" placeholder="Pick a username" maxlength="20" pattern="[a-zA-Z0-9_\\-]+" required autocomplete="username webauthn">
         <button type="submit" class="btn btn-primary">Create passkey</button>
-      </form>
-
-      <form id="code-form" style="display:none;">
-        <div id="code-pill" class="input-pill">
-          <input type="text" id="code-input" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
-          <button type="submit" class="btn btn-primary" id="code-submit-btn" aria-label="Sign in" style="visibility:hidden;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-          </button>
-        </div>
       </form>
 
       <form id="recovery-form" style="display:none;">
@@ -1117,16 +1058,14 @@ export const HTML = `<!DOCTYPE html>
     </form>
     </div>
 
-    <button type="button" id="use-email-btn" aria-label="Sign in with email" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22 6 12 13 2 6"/></svg></button>
     <button type="button" id="auth-back" aria-label="Back" style="display:none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></button>
   </div>
 
   <div id="auth-meta">
     <div id="auth-status"></div>
-    <div id="resend-row" style="display:none;"></div>
-    <div id="dev-link"></div>
   </div>
   <div id="auth-alts">
+    <a href="#" id="use-passkey-here" style="display:none;">Use a passkey on this device</a>
     <a href="#" id="use-recovery" style="display:none;">Use recovery code</a>
   </div>
 </div>
@@ -1208,7 +1147,7 @@ export const HTML = `<!DOCTYPE html>
     <button type="button" id="profile-close" aria-label="Close">&times;</button>
     <h4 id="profile-heading">Profile</h4>
     <div id="profile-meta">
-      Joined <span id="profile-joined">—</span> · <span id="profile-fp" class="fp">—</span>
+      Joined <span id="profile-joined">-</span> · <span id="profile-fp" class="fp">-</span>
     </div>
     <div>
       <label for="username-input">Username</label>
@@ -1222,29 +1161,6 @@ export const HTML = `<!DOCTYPE html>
       <input type="checkbox" id="notify-toggle">
       Play sound when mentioned
     </label>
-    <div id="email-section">
-      <h4>Email</h4>
-      <div id="email-current">
-        <span id="email-value"></span>
-        <span id="email-actions">
-          <button class="btn icon-btn" id="email-change-btn" type="button" title="Change email" aria-label="Change email">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          </button>
-          <button class="btn btn-danger icon-btn" id="email-remove-btn" type="button" title="Remove email" aria-label="Remove email">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-          </button>
-          <button class="btn" id="email-add-btn" type="button">Add email</button>
-        </span>
-      </div>
-      <div id="email-form" style="display:none;">
-        <input type="email" id="email-new-input" placeholder="new@example.com">
-        <div class="email-form-actions">
-          <button class="btn btn-primary" id="email-send-btn" type="button">Send verification</button>
-          <button class="btn" id="email-form-cancel" type="button">Cancel</button>
-        </div>
-      </div>
-      <div id="email-msg"></div>
-    </div>
     <div id="pk-section">
       <h4>Passkeys</h4>
       <div id="pk-list"></div>
@@ -1272,12 +1188,15 @@ export const HTML = `<!DOCTYPE html>
   const authScreen  = document.getElementById('auth-screen');
   const chatScreen  = document.getElementById('chat-screen');
   const authPrimary = document.getElementById('auth-primary');
+  const authQr      = document.getElementById('auth-qr');
+  const qrSvgHost   = document.getElementById('qr-svg-host');
+  const qrCard      = document.getElementById('qr-card');
+  const qrHint      = document.getElementById('qr-hint');
   const signupForm  = document.getElementById('signup-form');
   const signupName  = document.getElementById('signup-name');
   const pkSigninBtn = document.getElementById('pk-signin-btn');
   const useRecovery = document.getElementById('use-recovery');
-  const useEmailBtn = document.getElementById('use-email-btn');
-  const resendRow   = document.getElementById('resend-row');
+  const usePasskeyHere = document.getElementById('use-passkey-here');
   const recoveryForm = document.getElementById('recovery-form');
   const recoveryUser = document.getElementById('recovery-user');
   const recoveryCode = document.getElementById('recovery-code');
@@ -1286,21 +1205,20 @@ export const HTML = `<!DOCTYPE html>
   const rcCodes     = document.getElementById('rc-codes');
   const rcCopy      = document.getElementById('rc-copy');
   const rcContinue  = document.getElementById('rc-continue');
-  const authForm    = document.getElementById('auth-form');
-  const emailInput  = document.getElementById('email-input');
-  const emailSubmitBtn = document.getElementById('email-submit-btn');
-  const codeForm    = document.getElementById('code-form');
-  const codeInput   = document.getElementById('code-input');
-  const codeSubmitBtn = document.getElementById('code-submit-btn');
   const authBack    = document.getElementById('auth-back');
   const authStatus  = document.getElementById('auth-status');
-  const devLink     = document.getElementById('dev-link');
   const pkSection   = document.getElementById('pk-section');
   const pkList      = document.getElementById('pk-list');
   const pkAddBtn    = document.getElementById('pk-add-btn');
   const rcRegenBtn  = document.getElementById('rc-regen-btn');
   const revokeOthersBtn = document.getElementById('revoke-others-btn');
-  let pendingEmail  = '';
+  // Windows desktop default-routes through QR pairing because the
+  // platform's passkey UX is rough; everyone else (Mac/Linux/mobile)
+  // gets the direct passkey flow. Touch-capable Windows 2-in-1s look
+  // like desktop here, which matches the conservative default, they
+  // can still tap "Use a passkey on this device" to fall through.
+  const isWindowsDesktop = /Windows/i.test(navigator.userAgent || '')
+    && !/Mobile|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   // Tracks whether the user has had a sign-in attempt fail in this
   // visit. The recovery-code escape hatch is hidden until this flips,
   // so the empty primary screen isn't cluttered with fallback links.
@@ -1325,23 +1243,12 @@ export const HTML = `<!DOCTYPE html>
   const profileClose = document.getElementById('profile-close');
   const profileDelete = document.getElementById('profile-delete');
   const notifyToggle = document.getElementById('notify-toggle');
-  const emailValue  = document.getElementById('email-value');
-  const emailActions = document.getElementById('email-actions');
-  const emailChangeBtn = document.getElementById('email-change-btn');
-  const emailRemoveBtn = document.getElementById('email-remove-btn');
-  const emailAddBtn  = document.getElementById('email-add-btn');
-  const emailForm   = document.getElementById('email-form');
-  const emailNewInput = document.getElementById('email-new-input');
-  const emailSendBtn = document.getElementById('email-send-btn');
-  const emailFormCancel = document.getElementById('email-form-cancel');
-  const emailMsg    = document.getElementById('email-msg');
   const suggestEl   = document.getElementById('mention-suggest');
   const connStatus  = document.getElementById('conn-status');
 
   let ws = null;
   let myUsername = '';
   let myColor = '';
-  let myEmail = null;
   let myFingerprint = null;
   let myCreatedAt = null;
   let isAuthed = false;
@@ -1366,7 +1273,7 @@ export const HTML = `<!DOCTYPE html>
     if (color) cur.color = color;
     if (online) cur.online = true;
     // delete + set moves the key to the end so the oldest entry is always
-    // the first one returned by .keys() — gives us a simple FIFO cap.
+    // the first one returned by .keys(), gives us a simple FIFO cap.
     knownUsers.delete(key);
     knownUsers.set(key, cur);
     if (knownUsers.size > 500) {
@@ -1475,7 +1382,7 @@ export const HTML = `<!DOCTYPE html>
   // Defense-in-depth against @mention notification floods. The server
   // already strips the @ prefix on mentions past its cap before
   // broadcasting, but if that ever regresses the client still refuses
-  // to render — or ping on — more than MAX_MENTIONS distinct recipients
+  // to render, or ping on, more than MAX_MENTIONS distinct recipients
   // in one message.
   const MAX_MENTIONS = 5;
   function renderMessageText(parent, text) {
@@ -1538,7 +1445,6 @@ export const HTML = `<!DOCTYPE html>
         const data = await res.json();
         myUsername = data.username;
         myColor = data.color;
-        myEmail = data.email || null;
         myFingerprint = data.fingerprint || null;
         myCreatedAt = data.created_at || null;
         showChat();
@@ -1574,24 +1480,8 @@ export const HTML = `<!DOCTYPE html>
     chatScreen.style.height = '';
     authScreen.style.display = 'flex';
     chatScreen.style.display = 'none';
-    // Prefill the email input from the last sign-in so returning users
-    // don't have to retype. Method preference would steer the layout, but
-    // the primary screen now exposes both options at once, so prefill is
-    // the only persistence that materially changes the UX.
-    try {
-      const last = getStored('auth.lastEmail');
-      if (last && !emailInput.value) emailInput.value = last;
-    } catch {}
-    updateEmailSubmitVisibility();
-    try { showAuthForm('primary'); } catch {}
+    try { showAuthForm(isWindowsDesktop ? 'qr' : 'primary'); } catch {}
   }
-
-  // Mirror the chat input pattern: only surface the submit arrow once
-  // the user has typed something, so the empty pill stays uncluttered.
-  function updateEmailSubmitVisibility() {
-    emailSubmitBtn.style.visibility = emailInput.value.trim() ? 'visible' : 'hidden';
-  }
-  emailInput.addEventListener('input', updateEmailSubmitVisibility);
 
   // Window during which the messages list keeps re-pinning to the bottom
   // on every layout/size change after chat opens. Mobile post-login
@@ -1607,7 +1497,7 @@ export const HTML = `<!DOCTYPE html>
   function showChat() {
     isAuthed = true;
     resetConnectionState();
-    stopAuthPolling();
+    stopQrPolling();
     abortConditionalPasskey();
     // Dismiss any auth-flow input still focused (e.g. a mobile keyboard
     // up from the email-code field). If we don't, the visualViewport
@@ -1623,7 +1513,7 @@ export const HTML = `<!DOCTYPE html>
     // Belt-and-suspenders: in addition to the ResizeObserver pin (which
     // catches actual layout-driven resizes), schedule explicit scroll
     // attempts at known iOS-keyboard-dismiss timings. Cheap and idempotent
-    // — each just snaps scrollTop to scrollHeight if we're still in the
+    //, each just snaps scrollTop to scrollHeight if we're still in the
     // post-login window.
     [50, 200, 400, 800, 1500, 2500].forEach((ms) => {
       setTimeout(() => {
@@ -1703,21 +1593,15 @@ export const HTML = `<!DOCTYPE html>
 
   // --- Auth helpers -------------------------------------------------------
   // Capability detection: gate every passkey UI affordance on a real
-  // PublicKeyCredential implementation. Without it we collapse to the
-  // email-only flow rather than letting users click buttons that error.
+  // PublicKeyCredential implementation. Without it the QR flow is the
+  // only sign-in path that still works on this device.
   const pkSupported = !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.get);
   let pkConditionalSupported = false;
   if (pkSupported && typeof PublicKeyCredential.isConditionalMediationAvailable === 'function') {
     PublicKeyCredential.isConditionalMediationAvailable()
-      .then((ok) => { pkConditionalSupported = !!ok; if (ok && authScreen.style.display !== 'none') startConditionalPasskey(); })
+      .then((ok) => { pkConditionalSupported = !!ok; if (ok && authScreen.style.display !== 'none' && !isWindowsDesktop) startConditionalPasskey(); })
       .catch(() => {});
   }
-
-  // Persist the user's last-used email and method so returning visitors land
-  // on the right screen with their address prefilled. Wrapped in try/catch
-  // because Safari private mode throws on localStorage access.
-  function getStored(k) { try { return localStorage.getItem(k); } catch { return null; } }
-  function setStored(k, v) { try { localStorage.setItem(k, v); } catch {} }
 
   function setStatus(msg, isError) {
     authStatus.textContent = msg || '';
@@ -1762,7 +1646,6 @@ export const HTML = `<!DOCTYPE html>
         body: JSON.stringify({ response: assertion }),
       });
       if (!finRes.ok) return;
-      setStored('auth.lastMethod', 'passkey');
       checkAuth();
     } catch {
       // Aborted, cancelled, or no credential picked - all silent.
@@ -1777,107 +1660,106 @@ export const HTML = `<!DOCTYPE html>
     }
   }
 
-  // Magic-link mode polls /auth/me so when the user clicks the link in a
-  // sibling tab (Mail.app etc. opens in the default browser), this tab
-  // notices the new session cookie and switches to chat without a manual
-  // refresh.
-  let pollTimer = null;
-  function startAuthPolling() {
-    stopAuthPolling();
-    pollTimer = setInterval(async () => {
-      try {
-        const res = await fetch('/auth/me');
-        if (res.ok) { stopAuthPolling(); checkAuth(); }
-      } catch {}
-    }, 2000);
+  // QR cross-device pairing for Windows desktop. The desktop POSTs
+  // /auth/qr/start to mint a single-use token (5 min TTL) and inline
+  // SVG QR for /p?t=TOKEN. The phone scans, signs in/up with a
+  // passkey, and POSTs /auth/qr/claim. The desktop's poll on
+  // /auth/qr/status flips to "authed", at which point the server
+  // mints a sid for that ownerId and sets it on the polling response.
+  const QR_POLL_MS = 1500;
+  let qrToken = null;
+  let qrPollTimer = null;
+  let qrRefreshTimer = null;
+  function stopQrPolling() {
+    if (qrPollTimer) { clearTimeout(qrPollTimer); qrPollTimer = null; }
+    if (qrRefreshTimer) { clearTimeout(qrRefreshTimer); qrRefreshTimer = null; }
+    qrToken = null;
   }
-  function stopAuthPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  function setQrExpiredState() {
+    qrCard.classList.add('expired');
+    qrHint.textContent = 'Code expired, refreshing…';
   }
-
-  // Resend cooldown shared by both the code and link flows. The server's
-  // per-email rate limit is 5/hr, so a 30s client-side guard mainly stops
-  // accidental double-clicks; the actual resend goes through submitSend()
-  // which performs the full /auth/send round-trip.
-  const RESEND_COOLDOWN = 30;
-  let resendTick = null;
-  let resendRemaining = 0;
-  let lastSentEmail = '';
-  let lastSentMode = '';
-  function showResend(mode, email) {
-    lastSentMode = mode; lastSentEmail = email;
-    resendRow.style.display = 'flex';
-    resendRemaining = RESEND_COOLDOWN;
-    renderResend();
-    if (resendTick) clearInterval(resendTick);
-    resendTick = setInterval(() => {
-      resendRemaining--;
-      if (resendRemaining <= 0) { clearInterval(resendTick); resendTick = null; }
-      renderResend();
-    }, 1000);
+  async function pollQrOnce() {
+    if (!qrToken) return;
+    const myToken = qrToken;
+    try {
+      const res = await fetch('/auth/qr/status?t=' + encodeURIComponent(myToken));
+      if (qrToken !== myToken) return;
+      const data = await res.json().catch(() => ({}));
+      if (data.status === 'authed') {
+        stopQrPolling();
+        setStatus('Signed in on your phone, loading chat…');
+        checkAuth();
+        return;
+      }
+      if (data.status === 'expired') {
+        setQrExpiredState();
+        await startQrPairing();
+        return;
+      }
+    } catch {}
+    qrPollTimer = setTimeout(pollQrOnce, QR_POLL_MS);
   }
-  function hideResend() {
-    resendRow.style.display = 'none';
-    resendRow.textContent = '';
-    if (resendTick) { clearInterval(resendTick); resendTick = null; }
-  }
-  function renderResend() {
-    resendRow.textContent = '';
-    const label = document.createElement('span');
-    label.textContent = lastSentMode === 'code' ? "Didn't get the code?" : "Didn't get the link?";
-    resendRow.appendChild(label);
-    const a = document.createElement('a');
-    a.href = '#';
-    if (resendRemaining > 0) {
-      a.textContent = 'Resend in ' + resendRemaining + 's';
-      a.setAttribute('aria-disabled', 'true');
-    } else {
-      a.textContent = 'Resend';
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (a.getAttribute('aria-disabled') === 'true') return;
-        submitSend(lastSentEmail, /*isResend*/ true);
-      });
+  async function startQrPairing() {
+    stopQrPolling();
+    qrSvgHost.textContent = '';
+    qrCard.classList.remove('expired');
+    qrHint.textContent = 'Open the camera on your phone and point it at the code';
+    setStatus('');
+    try {
+      const res = await fetch('/auth/qr/start', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token || !data.qrSvg) {
+        setStatus(data.error || 'Could not generate code', true);
+        return;
+      }
+      qrToken = data.token;
+      // Server-rendered SVG is a fixed string we just emitted; safe to
+      // assign as innerHTML inside the white card host.
+      qrSvgHost.innerHTML = data.qrSvg;
+      qrPollTimer = setTimeout(pollQrOnce, QR_POLL_MS);
+      // Refresh the QR a bit before the server-side TTL elapses so a
+      // user who walked away can still scan it on return.
+      const refreshMs = Math.max(30, (data.expiresInSec || 300) - 15) * 1000;
+      qrRefreshTimer = setTimeout(() => { startQrPairing(); }, refreshMs);
+    } catch {
+      setStatus('Network error', true);
     }
-    resendRow.appendChild(a);
   }
 
   function showAuthForm(which) {
     const onPrimary = which === 'primary';
-    const onEmail = which === 'email';
-    // Passkey-first: primary view shows the passkey buttons + a small
-    // "Sign in with email" toggle; the email pill lives in its own
-    // 'email' state. When passkeys aren't supported we collapse to the
-    // email pill on the primary view (since there's nothing to gate).
+    const onQr = which === 'qr';
     authPrimary.style.display = (onPrimary && pkSupported) ? 'flex' : 'none';
-    useEmailBtn.style.display = (onPrimary && pkSupported) ? 'inline-flex' : 'none';
-    authForm.style.display = (onEmail || (onPrimary && !pkSupported)) ? 'flex' : 'none';
+    authQr.style.display = onQr ? 'flex' : 'none';
     signupForm.style.display = which === 'signup' ? 'flex' : 'none';
-    codeForm.style.display = which === 'code' ? 'flex' : 'none';
     recoveryForm.style.display = which === 'recovery' ? 'flex' : 'none';
-    // Back icon button sits in the auth-alts footer row on every
-    // non-primary state.
-    authBack.style.display = onPrimary ? 'none' : 'inline-flex';
+    // Back icon button sits in auth-stack on every non-default state.
+    // The default is QR for Windows desktop, primary for everyone else.
+    const defaultState = isWindowsDesktop ? 'qr' : 'primary';
+    authBack.style.display = which === defaultState ? 'none' : 'inline-flex';
+    // Windows users with a passkey on this device (Windows Hello, FIDO
+    // key) can opt out of the phone flow. Hidden everywhere else
+    // because the passkey path is already the default.
+    usePasskeyHere.style.display = (onQr && pkSupported) ? 'inline' : 'none';
     // "Use recovery code" is the escape hatch for users who can't get
-    // their passkey or email working. Hidden until a login attempt has
-    // actually failed (loginAttemptFailed flag), at which point it
-    // surfaces on every state until a fresh visit clears it.
+    // their passkey working. Hidden until a login attempt actually
+    // fails (loginAttemptFailed flag), then surfaces on every state.
     useRecovery.style.display = loginAttemptFailed ? 'inline' : 'none';
     // Re-enable inputs that a previous setLoading() may have disabled.
-    [authForm, codeForm, signupForm, recoveryForm].forEach((f) => {
+    [signupForm, recoveryForm].forEach((f) => {
       f.querySelectorAll('input,button').forEach((el) => { el.disabled = false; el.classList.remove('loading'); });
     });
-    // Sync pill arrow visibility to the current input contents in case
-    // the user navigated away with a value typed and then returned.
-    updateEmailSubmitVisibility();
     updateRecoverySubmitVisibility();
-    updateCodeSubmitVisibility();
-    if (which !== 'code') hideResend();
-    stopAuthPolling();
-    // Conditional WebAuthn fires on any screen with a webauthn-tagged
-    // input visible — both 'primary' (where the passkey buttons live)
-    // and 'email' (the email pill is the autofill anchor).
-    if ((onPrimary || onEmail) && pkSupported) startConditionalPasskey();
+    // QR pairing only runs when its panel is visible; tear it down
+    // anywhere else so we don't burn rate-limit budget on idle polls.
+    if (onQr) startQrPairing();
+    else stopQrPolling();
+    // Conditional WebAuthn (autofill) fires on any screen exposing a
+    // webauthn-tagged input, primary (no input) doesn't, but the
+    // platform autofill anchors on the page in general, so we start
+    // it on primary too. QR screen has no signin form so skip.
+    if (onPrimary && pkSupported) startConditionalPasskey();
     else abortConditionalPasskey();
   }
 
@@ -1885,7 +1767,7 @@ export const HTML = `<!DOCTYPE html>
     if (!pkSupported) { setStatus('Passkeys not supported on this browser', true); return; }
     abortConditionalPasskey();
     // Show the wait state inside the button instead of the meta area
-    // below — keeps the user's eye on the action they just took.
+    // below, keeps the user's eye on the action they just took.
     const originalLabel = pkSigninBtn.textContent;
     pkSigninBtn.textContent = 'Waiting for passkey...';
     pkSigninBtn.disabled = true;
@@ -1901,7 +1783,7 @@ export const HTML = `<!DOCTYPE html>
         // WebAuthn returns the same NotAllowedError whether the user
         // has no passkey for this site or just cancelled the prompt.
         // Either way, surface the signup form so they can pick a
-        // username and create one — they can hit Back to retry sign-in.
+        // username and create one, they can hit Back to retry sign-in.
         markLoginFailed();
         showAuthForm('signup');
         setStatus('No passkey found - pick a username to create one.');
@@ -1916,7 +1798,6 @@ export const HTML = `<!DOCTYPE html>
       const finData = await finRes.json();
       if (!finRes.ok) throw new Error(finData.error || 'Sign-in failed');
       setStatus('');
-      setStored('auth.lastMethod', 'passkey');
       checkAuth();
     } catch (e) {
       // Server-side failure (network, /auth/webauthn/* error). Stay on
@@ -1953,7 +1834,6 @@ export const HTML = `<!DOCTYPE html>
       const finData = await finRes.json();
       if (!finRes.ok) throw new Error(finData.error || 'Registration failed');
       setStatus('');
-      setStored('auth.lastMethod', 'passkey');
       if (finData.recoveryCodes && finData.recoveryCodes.length) {
         rcCodes.textContent = finData.recoveryCodes.join('\\n');
         rcModal.classList.add('open');
@@ -1968,62 +1848,6 @@ export const HTML = `<!DOCTYPE html>
     }
   }
 
-  // Shared between the form submit and the resend link.
-  async function submitSend(email, isResend) {
-    if (!email) return;
-    if (!isResend) setLoading(authForm, true);
-    setStatus(isResend ? 'Resending...' : 'Sending...');
-    devLink.innerHTML = '';
-    try {
-      const res = await fetch('/auth/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setStatus(data.error || 'Something went wrong', true);
-        markLoginFailed();
-        return;
-      }
-      setStored('auth.lastEmail', email);
-      setStored('auth.lastMethod', 'email');
-      if (data.mode === 'code') {
-        pendingEmail = email;
-        if (!isResend) showAuthForm('code');
-        setStatus('Enter the 6-digit code we sent to ' + email);
-        if (!isResend) { codeInput.value = ''; codeInput.focus(); }
-        showResend('code', email);
-        if (data.dev_code) {
-          devLink.textContent = '';
-          const label = document.createElement('span');
-          label.textContent = 'Dev code: ';
-          const code = document.createElement('b');
-          code.textContent = data.dev_code;
-          label.appendChild(code);
-          devLink.appendChild(label);
-        }
-      } else {
-        setStatus('Sign-in link sent to ' + email + '. Check your inbox.');
-        showResend('link', email);
-        startAuthPolling();
-        if (data.dev_link) {
-          devLink.textContent = '';
-          const a = document.createElement('a');
-          a.href = data.dev_link;
-          a.target = '_blank';
-          a.rel = 'noopener';
-          a.textContent = 'Dev: click here to sign in';
-          devLink.appendChild(a);
-        }
-      }
-    } catch {
-      setStatus('Network error', true);
-    } finally {
-      if (!isResend) setLoading(authForm, false);
-    }
-  }
-
   pkSigninBtn.addEventListener('click', doPasskeySignin);
   signupForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2034,13 +1858,10 @@ export const HTML = `<!DOCTYPE html>
     }
     doPasskeySignup(n);
   });
-  useEmailBtn.addEventListener('click', () => {
-    showAuthForm('email');
+  usePasskeyHere.addEventListener('click', (e) => {
+    e.preventDefault();
+    showAuthForm('primary');
     setStatus('');
-    devLink.innerHTML = '';
-    // Skip auto-focus on touch viewports so the on-screen keyboard
-    // doesn't open the moment the user lands on this screen.
-    if (!matchMedia('(max-width: 640px)').matches) emailInput.focus();
   });
   useRecovery.addEventListener('click', (e) => {
     e.preventDefault();
@@ -2050,8 +1871,8 @@ export const HTML = `<!DOCTYPE html>
     // doesn't slam open the moment the user lands on this screen.
     if (!matchMedia('(max-width: 640px)').matches) recoveryUser.focus();
   });
-  // Mirror the email pill: only surface the submit arrow once the user
-  // has typed something so the empty pill stays uncluttered.
+  // Only surface the submit arrow once the user has typed something so
+  // the empty pill stays uncluttered.
   function updateRecoverySubmitVisibility() {
     recoverySubmitBtn.style.visibility = recoveryCode.value.trim() ? 'visible' : 'hidden';
   }
@@ -2093,64 +1914,10 @@ export const HTML = `<!DOCTYPE html>
     checkAuth();
   });
 
-  authForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    submitSend(emailInput.value.trim(), /*isResend*/ false);
-  });
-
-  // Auto-submit the 6-digit code as soon as it's entered (typed or pasted).
-  // Stripping non-digits lets paste of "123-456" or "Your code: 123456" land
-  // cleanly. The submit handler still re-validates so a bad value is safe.
-  function updateCodeSubmitVisibility() {
-    codeSubmitBtn.style.visibility = codeInput.value.trim() ? 'visible' : 'hidden';
-  }
-  codeInput.addEventListener('input', () => {
-    const digits = codeInput.value.replace(/\\D/g, '').slice(0, 6);
-    if (digits !== codeInput.value) codeInput.value = digits;
-    updateCodeSubmitVisibility();
-    if (digits.length === 6 && !codeInput.disabled) {
-      if (typeof codeForm.requestSubmit === 'function') codeForm.requestSubmit();
-      else codeForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-    }
-  });
-
-  codeForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const code = codeInput.value.trim();
-    if (!/^\\d{6}$/.test(code) || !pendingEmail) return;
-    setLoading(codeForm, true);
-    setStatus('Verifying...');
-    try {
-      const res = await fetch('/auth/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: pendingEmail, code }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setStatus('');
-        devLink.innerHTML = '';
-        hideResend();
-        showAuthForm('primary');
-        pendingEmail = '';
-        checkAuth();
-      } else {
-        setStatus(data.error || 'Invalid code', true);
-        markLoginFailed();
-      }
-    } catch {
-      setStatus('Network error', true);
-    } finally {
-      setLoading(codeForm, false);
-    }
-  });
-
   authBack.addEventListener('click', (e) => {
     e.preventDefault();
-    pendingEmail = '';
-    showAuthForm('primary');
+    showAuthForm(isWindowsDesktop ? 'qr' : 'primary');
     setStatus('');
-    devLink.innerHTML = '';
   });
 
   // --- WebSocket ---
@@ -2189,7 +1956,7 @@ export const HTML = `<!DOCTYPE html>
       if (data.type === 'msg') {
         // Check scroll position BEFORE appending so the new node doesn't
         // skew the math. Only auto-scroll if the user is already near the
-        // bottom — otherwise they're reading history and a jump is annoying.
+        // bottom, otherwise they're reading history and a jump is annoying.
         const nearBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 80;
         appendMsg(data, true, nearBottom);
         refreshTimestamps();
@@ -2237,7 +2004,7 @@ export const HTML = `<!DOCTYPE html>
   // multiples of 5 minutes ("10m", "15m", "20m", ...) up to 2 hours,
   // then "Nh" up to 2 days, "Nd" after that. The 5-minute rounding past
   // 10m keeps the time column from re-ticking on every minute boundary
-  // for messages that are no longer "fresh" — labels in this band only
+  // for messages that are no longer "fresh", labels in this band only
   // change once every 5 minutes by construction.
   function formatRelativeTime(tsMs) {
     const diffSec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
@@ -2325,7 +2092,7 @@ export const HTML = `<!DOCTYPE html>
     if (autoScroll) {
       // #messages has scroll-behavior: smooth, so this one assignment
       // animates the viewport up to reveal the new (already-full-height)
-      // message — no per-frame layout work required.
+      // message, no per-frame layout work required.
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
@@ -2378,7 +2145,7 @@ export const HTML = `<!DOCTYPE html>
   // Cross-fade a timeline cell when its text changes so labels drifting
   // from "2m" → "3m" as messages age feel like ambient updates instead
   // of jump cuts. First-time population (empty → label) sets the text
-  // instantly — only subsequent changes fade.
+  // instantly, only subsequent changes fade.
   function setTimelineText(timeline, display) {
     const prev = timeline.textContent;
     if (prev === display) return;
@@ -2409,7 +2176,7 @@ export const HTML = `<!DOCTYPE html>
 
   // Send button only appears once the user has typed something. We
   // toggle visibility rather than display so the button keeps its slot
-  // in the flex row — otherwise the text input jumps wider/narrower
+  // in the flex row, otherwise the text input jumps wider/narrower
   // each time the button appears or disappears.
   function updateSendVisibility() {
     sendBtn.style.visibility = msgInput.value.trim() ? 'visible' : 'hidden';
@@ -2562,96 +2329,6 @@ export const HTML = `<!DOCTYPE html>
     }
   });
 
-  function renderEmail() {
-    emailValue.textContent = myEmail || '';
-    emailForm.style.display = 'none';
-    emailNewInput.value = '';
-    emailMsg.textContent = '';
-    emailMsg.className = '';
-    emailChangeBtn.style.display = myEmail ? '' : 'none';
-    emailRemoveBtn.style.display = myEmail ? '' : 'none';
-    emailAddBtn.style.display = myEmail ? 'none' : '';
-  }
-
-  function openEmailForm(placeholder) {
-    emailForm.style.display = 'flex';
-    emailActions.style.display = 'none';
-    emailNewInput.placeholder = placeholder;
-    emailNewInput.focus();
-  }
-
-  function closeEmailForm() {
-    emailForm.style.display = 'none';
-    emailActions.style.display = '';
-    emailNewInput.value = '';
-    emailMsg.textContent = '';
-    emailMsg.className = '';
-  }
-
-  emailChangeBtn.addEventListener('click', () => openEmailForm('new@example.com'));
-  emailAddBtn.addEventListener('click', () => openEmailForm('you@example.com'));
-  emailFormCancel.addEventListener('click', closeEmailForm);
-
-  emailSendBtn.addEventListener('click', async () => {
-    const val = emailNewInput.value.trim().toLowerCase();
-    if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
-      emailMsg.textContent = 'Enter a valid email address.';
-      emailMsg.className = 'error';
-      return;
-    }
-    emailSendBtn.disabled = true;
-    emailMsg.textContent = 'Sending...';
-    emailMsg.className = '';
-    try {
-      const res = await fetch('/auth/email/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: val }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        emailMsg.textContent = data.error || 'Failed to send';
-        emailMsg.className = 'error';
-      } else {
-        emailMsg.textContent = 'Check ' + val + ' for a verification link.';
-        emailMsg.className = 'ok';
-        if (data.dev_link) {
-          const a = document.createElement('a');
-          a.href = data.dev_link;
-          a.textContent = 'Open dev link';
-          a.target = '_blank';
-          emailMsg.appendChild(document.createTextNode(' '));
-          emailMsg.appendChild(a);
-        }
-      }
-    } catch {
-      emailMsg.textContent = 'Network error';
-      emailMsg.className = 'error';
-    } finally {
-      emailSendBtn.disabled = false;
-    }
-  });
-
-  emailRemoveBtn.addEventListener('click', async () => {
-    if (!confirm('Remove your email? You will only be able to sign in with a passkey or a recovery code.')) return;
-    try {
-      const res = await fetch('/auth/email/remove', { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        emailMsg.textContent = data.error || 'Failed to remove';
-        emailMsg.className = 'error';
-        return;
-      }
-      myEmail = null;
-      renderEmail();
-      emailMsg.textContent = 'Email removed.';
-      emailMsg.className = 'ok';
-    } catch {
-      emailMsg.textContent = 'Network error';
-      emailMsg.className = 'error';
-    }
-  });
-
   function openProfileModal() {
     usernameInput.value = myUsername;
     colorInput.value = myColor.startsWith('#') ? myColor : '#5b8def';
@@ -2659,11 +2336,9 @@ export const HTML = `<!DOCTYPE html>
     notifyToggle.checked = notifyOn;
     profileJoined.textContent = myCreatedAt
       ? new Date(myCreatedAt).toLocaleDateString()
-      : '—';
-    profileFp.textContent = myFingerprint ? '#' + myFingerprint : '—';
+      : '-';
+    profileFp.textContent = myFingerprint ? '#' + myFingerprint : '-';
     updateColorWarn();
-    renderEmail();
-    emailActions.style.display = '';
     renderPasskeys();
     profileModal.classList.add('open');
   }
@@ -2898,7 +2573,7 @@ export const HTML = `<!DOCTYPE html>
   function buildUserLi(u) {
     // The whole pill acts as the click target (clickable-name + the
     // username dataset both on the li) so hovering anywhere in the
-    // padded area — not just the text — triggers the hover highlight
+    // padded area, not just the text, triggers the hover highlight
     // and opens the user modal on click.
     const li = document.createElement('li');
     li.classList.add('clickable-name');
@@ -2960,7 +2635,7 @@ export const HTML = `<!DOCTYPE html>
       }
       userLiByName.set(u.username, li);
       // Two rAFs so the browser commits the 'entering' state before we
-      // remove the class — otherwise the transition is skipped.
+      // remove the class, otherwise the transition is skipped.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => li.classList.remove('entering'));
       });
@@ -3017,8 +2692,8 @@ export const HTML = `<!DOCTYPE html>
   });
 
   // rAF-throttle resize so a stream of events during window/keyboard
-  // animations collapses to one updateUserOverflow call per frame —
-  // each call does a getBoundingClientRect sweep across every pill.
+  // animations collapses to one updateUserOverflow call per frame.
+  // Each call does a getBoundingClientRect sweep across every pill.
   let overflowRaf = 0;
   window.addEventListener('resize', () => {
     if (overflowRaf) return;
@@ -3078,7 +2753,7 @@ export const HTML = `<!DOCTYPE html>
   // toggles.
   //
   // iOS fires a burst of resize + scroll events on visualViewport as
-  // the keyboard slides up or down — dozens per second. rAF-coalesce
+  // the keyboard slides up or down, dozens per second. rAF-coalesce
   // them so we do at most one layout-and-rescroll pass per frame, and
   // skip writes that would be no-ops. This is the single biggest lever
   // for making the keyboard open/close feel snappy.
