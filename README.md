@@ -25,7 +25,7 @@ Everything runs on the edge. No database, no server to manage.
 
 ### 1. Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 22+
 - A [Cloudflare](https://cloudflare.com) account
 - (Optional) A [Resend](https://resend.com) account for sending magic link emails
 
