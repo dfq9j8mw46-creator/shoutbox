@@ -9,10 +9,10 @@
     "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.152.0"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
     "qrcode-generator": "^2.0.4"
   }
 }
